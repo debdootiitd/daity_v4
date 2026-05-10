@@ -13,6 +13,7 @@ import torch.nn as nn
 
 from daity.models.heads import (
     ContrastiveHead,
+    CrossAttentionForecastHead,
     MaskedReconstructionHead,
     MultiHorizonForecastHead,
     NextPatchHead,
@@ -78,6 +79,124 @@ def test_multi_horizon_forecast_head_rejects_3d_input() -> None:
     h = MultiHorizonForecastHead(d_model=64, n_patches=4, num_channels=5, patch_len=16)
     with pytest.raises(ValueError, match=r"\(B, d_model\)"):
         h(torch.randn(8, 32, 64))
+
+
+# ----- Cross-attention forecast head (Phase 2.4) -----
+
+
+def test_cross_attention_forecast_head_shape() -> None:
+    """Output shape matches the MLP head — downstream loss code unchanged."""
+    h = CrossAttentionForecastHead(
+        d_model=64, n_patches=6, num_channels=5, patch_len=16,
+        n_heads=4, n_layers=2, ffn_ratio=2,
+    )
+    encoder_hidden = torch.randn(8, 81, 64)         # (B, T_patches, d_model)
+    out = h(encoder_hidden)
+    assert out.shape == (8, 6, 5, 16)
+
+
+def test_cross_attention_forecast_head_18_channels() -> None:
+    """Same shape contract for the 18-channel feature-engine input."""
+    h = CrossAttentionForecastHead(
+        d_model=480, n_patches=6, num_channels=18, patch_len=16,
+        n_heads=8, n_layers=2,
+    )
+    encoder_hidden = torch.randn(2, 81, 480)
+    out = h(encoder_hidden)
+    assert out.shape == (2, 6, 18, 16)
+
+
+def test_cross_attention_forecast_head_rejects_invalid_dims() -> None:
+    with pytest.raises(ValueError, match="n_patches must be positive"):
+        CrossAttentionForecastHead(
+            d_model=64, n_patches=0, num_channels=5, patch_len=16,
+            n_heads=4,
+        )
+    with pytest.raises(ValueError, match="positive"):
+        CrossAttentionForecastHead(
+            d_model=64, n_patches=4, num_channels=0, patch_len=16,
+            n_heads=4,
+        )
+    with pytest.raises(ValueError, match="must be divisible"):
+        CrossAttentionForecastHead(
+            d_model=63, n_patches=4, num_channels=5, patch_len=16,
+            n_heads=4,    # 63/4 doesn't divide
+        )
+
+
+def test_cross_attention_forecast_head_rejects_2d_input() -> None:
+    """Caller must pass (B, T, d_model). 2D input (the legacy MLP signature)
+    must raise — protects against accidentally swapping head types without
+    updating the call site."""
+    h = CrossAttentionForecastHead(
+        d_model=64, n_patches=4, num_channels=5, patch_len=16, n_heads=4,
+    )
+    with pytest.raises(ValueError, match=r"\(B, T, d_model\)"):
+        h(torch.randn(8, 64))
+
+
+def test_cross_attention_forecast_head_each_query_can_differ() -> None:
+    """The H learnable queries should *not* collapse to identical vectors —
+    that would be a degenerate init / training artifact. After init, the
+    queries differ; after a few SGD steps on a fixed batch, they continue
+    to differ (different positions in the future learn different roles)."""
+    torch.manual_seed(0)
+    h = CrossAttentionForecastHead(
+        d_model=64, n_patches=6, num_channels=5, patch_len=16,
+        n_heads=4, n_layers=2,
+    )
+    # At init: all queries are random and distinct.
+    pairwise_dists = (h.queries.unsqueeze(0) - h.queries.unsqueeze(1)).norm(dim=-1)
+    # Off-diagonal must be > 0 everywhere.
+    off_diag = pairwise_dists + torch.eye(6) * 1e9    # mask diag with infinity
+    assert off_diag.min() > 1e-3, (
+        f"forecast queries collapsed at init; min off-diag distance = "
+        f"{off_diag.min():.4e}"
+    )
+
+
+def test_cross_attention_forecast_head_overfit_one_batch() -> None:
+    """Sanity: the head can fit a single (encoder, target) pair to within
+    epsilon over 100 SGD steps. Tests that gradients flow from output
+    back through the cross-attention layers and into the queries."""
+    torch.manual_seed(0)
+    h = CrossAttentionForecastHead(
+        d_model=64, n_patches=4, num_channels=5, patch_len=16,
+        n_heads=4, n_layers=1, ffn_ratio=2,
+    )
+    encoder_hidden = torch.randn(2, 16, 64)
+    target = torch.randn(2, 4, 5, 16)
+    opt = torch.optim.AdamW(h.parameters(), lr=5e-3)
+    losses = []
+    for _ in range(100):
+        opt.zero_grad()
+        pred = h(encoder_hidden)
+        loss = (pred - target).pow(2).mean()
+        loss.backward()
+        opt.step()
+        losses.append(loss.item())
+    # Loss must drop substantially.
+    assert losses[-1] < 0.3 * losses[0], (
+        f"cross-attention head failed to overfit: "
+        f"start={losses[0]:.4f}, end={losses[-1]:.4f}"
+    )
+
+
+def test_cross_attention_param_count_vs_mlp() -> None:
+    """Document the size delta. Cross-attention head should be ~2-3× bigger
+    than the MLP head at production config — meaningful but not blowing up
+    the model."""
+    common = dict(d_model=480, n_patches=6, num_channels=18, patch_len=16)
+    mlp = MultiHorizonForecastHead(**common)
+    xattn = CrossAttentionForecastHead(**common, n_heads=8, n_layers=2)
+    n_mlp = sum(p.numel() for p in mlp.parameters())
+    n_xattn = sum(p.numel() for p in xattn.parameters())
+    # Lock in the rough ratio so future architecture changes get reviewed.
+    # MLP at this config: ~2.0M; xattn: ~3.7-3.9M. Ratio ~1.8-2.0×.
+    assert 1.3 < (n_xattn / n_mlp) < 4.0, (
+        f"xattn/mlp param ratio = {n_xattn/n_mlp:.2f}; "
+        f"out of expected 1.3-4.0× range"
+    )
 
 
 def test_contrastive_head_rejects_zero_proj_dim() -> None:

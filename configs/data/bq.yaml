@@ -1,0 +1,14 @@
+# BigQuery target. Values default to env vars; override here only if needed.
+project: ${oc.env:DAITY_BQ_PROJECT,atomic-vault-476315-m3}
+dataset: ${oc.env:DAITY_BQ_DATASET,daity_v3}
+location: ${oc.env:DAITY_BQ_LOCATION,US}
+
+tables:
+  ohlcv: curated_ohlcv
+  order_book: order_book_depth
+
+# Audit-time knobs
+audit:
+  sample_rows: 100
+  ohlcv_recent_days: 5      # how recent "recently active" means for survivorship probe
+  symbol_day_horizon_years: 3

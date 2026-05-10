@@ -1,0 +1,113 @@
+# Phase 2.3 v3_features — 18-channel input via Phase-1 feature engine.
+#
+# Hypothesis: v2_long (absolute targets) plateaued at val_forecast≈22.8 and
+# v3_lr (log-return targets) plateaued at val_forecast≈4.4 — same flat shape,
+# different units. Neither converges. The bottleneck is *input signal*, not
+# target form or capacity. Adding the feature engine's 13 extra channels
+# (log_return lags, wicks, vol_z, time covariates) on top of the 5 raw
+# bar_channels gives the model microstructure + regime signals it currently
+# has to synthesize from raw bars.
+#
+# A/B vs v3_lr: same architecture, same target form (log_returns), same
+# stability tools (lr=7e-4 + grad_clip=1.0). The ONLY difference is reading
+# from `data/features_parquet/` (18 channels) instead of `data/parquet/`
+# (5 channels).
+#
+# `to_log_returns` is applied to channels 0:5 only (the raw bar_channels);
+# channels 5:18 are derived features that are already stationary and pass
+# through unchanged into RevIN.
+#
+# Decision rule on val_forecast at convergence:
+#   - clearly < v3_lr's plateau (4.4 in log-return-MSE space) → features win;
+#     this is the new Phase-2 baseline; ship to Phase 3
+#   - ≈ v3_lr's plateau → features don't help either; bottleneck is
+#     architectural (head capacity) or fundamental (8h-ahead NSE 5m really is
+#     unpredictable from this much context). Either way, more scaling /
+#     feature work is unproductive — go to Phase 3 with v3_lr's checkpoint
+#     and rely on the supervised head to add signal.
+#
+# Cost: 150K × ~5 it/s on H200 ≈ 8.5h wall-clock at batch=512 with 18 ch
+# (slightly slower than v3_lr's 5.5 it/s due to ~3.6× input channel count).
+
+# Data — feature_root is the headline change.
+universe_path: data/cache
+parquet_root:  data/parquet              # kept for SymbolMaster + universe resolution
+feature_root:  data/features_parquet     # NEW: 18-channel input source
+scales:
+  - 5m
+  - 15m
+  - 60m
+  - day
+num_channels:  18                        # was 5; matches CHANNEL_ORDER_18
+window_bars:
+  5m:  256
+  15m: 192
+  60m: 168
+  day: 64
+batch_size:    512
+num_workers:   4
+pin_memory:    true
+
+# Tokenizer / backbone — IDENTICAL to v3_lr (36M params, same architecture).
+# The only impact of num_channels=18 is on the per-scale tokenizer Linear
+# (input dim 18*16=288 instead of 5*16=80) and the recon/ntp/forecast head
+# output dims (proportionally bigger). Total params goes from 36M to ~37M.
+d_model:       480
+n_layers:      12
+n_heads:       8
+ffn_ratio:     4
+patch_len:     16
+patch_stride:  8
+max_seq_len:   128
+
+# SSL — IDENTICAL to v3_lr.
+mask_ratio:    0.4
+contrastive_proj_dim:    128
+contrastive_temperature: 0.07
+revin_affine:  false
+forecast_scale:     "5m"
+forecast_n_patches: 6
+# Forecast head predicts ONLY the 5 OHLCV bar_channels (in log-return form),
+# not all 18 input channels. The 13 derived feature channels (especially
+# log_volume and vol_z_20) are heavy-tailed and produce 10⁵-10⁸ MSE spikes
+# on outlier batches even with gradient clipping. v1 attempt without this
+# saw train_loss_forecast spike to 583M at step 999. Predicting only OHLCV
+# log-returns is also Phase 3-aligned.
+forecast_num_channels: 5
+w_masked:      1.0
+w_ntp:         0.5
+w_contrastive: 0.0
+w_forecast:    0.5
+
+# Phase 2.3: log-return form for inputs + targets (same as v3_lr).
+# `to_log_returns_partial` applies the transform only to channels 0:5
+# (the bar_channels). The other 13 channels pass through unchanged.
+input_form:    "log_returns"
+target_form:   "log_returns"
+
+# Optim — IDENTICAL to v3_lr (stable lr + grad clip).
+lr:                7e-4
+weight_decay:      1e-2
+warmup_pct:        0.025
+max_steps:         150_000
+lr_min_ratio:      0.05
+ema_decay:         0.999
+gradient_clip_val: 1.0
+
+# Trainer.
+val_every_n_steps:    2000
+limit_val_batches:    50
+checkpoint_every_n_steps: 5000
+save_top_k:               5
+precision:    "bf16-mixed"
+device:       "auto"
+
+# Universe split.
+train_end:    "2025-12-31"
+val_start:    "2026-01-01"
+val_end:      "2026-04-30"
+
+# Logging.
+wandb_project: "daity_v3"
+wandb_offline: true
+log_dir:       "runs/pretrain_v3_features"

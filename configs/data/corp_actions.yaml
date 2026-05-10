@@ -1,0 +1,38 @@
+# Per-symbol corp-action ratios that the existing pipeline failed to apply.
+# Each entry: apply `ratio` to OHLC and `1/ratio` to volume for all rows
+# where ts_ist < cutoff_date (or all rows if cutoff_date is null).
+#
+# Sources:
+#   - audit ratios: see `daity-refresh-ohlcv --intervals day --overlap-days 365`
+#   - corp-action dates: cross-validated against NSE / news (see PR / issue
+#     thread for citations).
+#   - cutoff_date: the boundary observed in the staged-vs-prod ratio time
+#     series — i.e., the date FROM which the existing pipeline started
+#     showing post-event prices. This may not equal the official record
+#     date (the existing pipeline can adjust earlier or later).
+#
+# Apply with:
+#   daity-readjust-symbols                 # dry-run
+#   daity-readjust-symbols --apply         # actual UPDATE on raw_ohlcv
+
+readjustments:
+  - symbol: HDFCAMC
+    event: "1:1 bonus issue"
+    record_date: "2025-11-26"
+    cutoff_date_ist: "2025-11-03"   # rows with date_ist < this get the ratio
+    ratio: 0.5                       # 1:1 bonus halves per-share price; doubles share count
+    notes: "Announced 2025-10-15. Existing pipeline applied adjustment ~3wk early."
+
+  - symbol: KOTAKBANK
+    event: "1:5 stock split (face value ₹5 → ₹1)"
+    record_date: "2026-01-14"
+    cutoff_date_ist: "2025-12-15"   # coincides with the rogue-backfill switchover
+    ratio: 0.2                       # 1:5 split divides per-share price by 5
+    notes: "Existing pipeline switched data sources on Dec 15 2025; post-Dec-15 data is split-adjusted."
+
+  - symbol: IRB
+    event: "1:1 bonus issue"
+    record_date: "2026-04-01"
+    cutoff_date_ist: null             # null → apply to ALL prod rows (all of prod is pre-bonus)
+    ratio: 0.5
+    notes: "Bonus is post-prod-window; entire prod history is pre-bonus."
