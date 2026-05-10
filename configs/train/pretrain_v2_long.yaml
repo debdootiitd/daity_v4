@@ -1,0 +1,103 @@
+# Phase 2.2 v2_long — converged-baseline run (with val-split fix + tuned batch).
+#
+# Why this config exists: v1/v2 (50K steps each) ended with val_forecast still
+# falling at slope ~−0.013/Kstep. Neither saturated. v2_long is the converged
+# baseline at 36M params; whatever val_loss this run reaches is the ceiling we
+# compare any future scaling experiment against.
+#
+# Phase-2.2 changes vs v2:
+#   1. max_steps  50K → 150K        — 3× longer training so the slow forecast
+#                                      tail has room to flatten
+#   2. lr_min_ratio 0.0 → 0.05      — cosine floors at 5% peak (was decay-to-0,
+#                                      effectively freezing the late phase)
+#   3. batch_size 64 → 256          — 4× batch to push GPU utilization. v2
+#                                      ran at 56% util / 4.2 GB; H200 has
+#                                      143 GB and is grossly underused. Bigger
+#                                      batch reduces fixed per-step overhead
+#                                      and improves throughput
+#   4. lr 5e-4 → 1e-3               — linear-damped scaling for 4× batch
+#                                      (sqrt(4)=2× would be 1e-3, so this is
+#                                      the conservative-ish scaling)
+#   5. warmup_pct 0.05 → 0.025      — keeps absolute warmup steps reasonable
+#                                      at ~3.75K (was 2.5K for v2 short);
+#                                      prevents the higher peak LR from
+#                                      destabilizing early
+#   6. min_end_ts in val_ds         — DESIGN §2.5 walk-forward fix: val_ds
+#                                      now strictly samples end_ts in
+#                                      [val_start, val_end], not [data_start,
+#                                      val_end] which overlapped train heavily
+#
+# Cost: 150K × ~10 it/s on H200 ≈ 4.2h wall-clock, ~$20-25 GPU.
+# Samples seen: 256 × 150K = 38.4M (vs v2's 3.2M; ~12× more compute total).
+
+# Data — IDENTICAL to v2 except batch_size.
+universe_path: data/cache
+parquet_root:  data/parquet
+scales:
+  - 5m
+  - 15m
+  - 60m
+  - day
+num_channels:  5
+window_bars:
+  5m:  256
+  15m: 192
+  60m: 168
+  day: 64
+batch_size:    512              # 8× v2; first try at 256 hit 82% GPU util,
+                                # bumping further to push toward 90%+. Memory
+                                # at 256 was 11.7 GB / 143 GB — comfortable
+                                # headroom even at 1024 if we ever go further.
+num_workers:   4                # multi-process dataloader; CLI uses
+                                # multiprocessing_context="spawn" + persistent_workers=True
+                                # so PyArrow fork-unsafety doesn't wedge us.
+                                # Each worker re-imports parent state once at
+                                # startup (~5-10s amortized over the whole run).
+pin_memory:    true             # speeds up CPU→GPU transfers ~5-10% — free win
+
+# Tokenizer / backbone — IDENTICAL to v2 (36M params).
+d_model:       480
+n_layers:      12
+n_heads:       8
+ffn_ratio:     4
+patch_len:     16
+patch_stride:  8
+max_seq_len:   128
+
+# SSL — IDENTICAL to v2.
+mask_ratio:    0.4
+contrastive_proj_dim:    128
+contrastive_temperature: 0.07
+revin_affine:  false
+forecast_scale:     "5m"
+forecast_n_patches: 6
+w_masked:      1.0
+w_ntp:         0.5
+w_contrastive: 0.0
+w_forecast:    0.5
+
+# Optim — TUNED for batch 256 + long training.
+lr:            1.4e-3            # sqrt(8) × 5e-4 = 1.4e-3 for 8× batch scaling
+weight_decay:  1e-2
+warmup_pct:    0.025             # 3.75K warmup steps at 150K max_steps
+max_steps:     150_000           # was 50K for v2; 3× longer
+lr_min_ratio:  0.05              # cosine floors at 5% of peak (NEW v2.2 feature)
+ema_decay:     0.999
+
+# Trainer — same idea as v2 but tuned for the longer run.
+val_every_n_steps:    2000       # was 1000; 75 val passes total
+limit_val_batches:    50
+checkpoint_every_n_steps: 5000   # was 2000; 30 checkpoint candidates
+save_top_k:               5
+precision:    "bf16-mixed"
+device:       "auto"
+
+# Universe split — IDENTICAL to v1/v2.
+train_end:    "2025-12-31"
+val_start:    "2026-01-01"
+val_end:      "2026-04-30"
+
+# Logging.
+wandb_project: "daity_v3"
+wandb_offline: true
+log_dir:       "runs/pretrain_v2_long"

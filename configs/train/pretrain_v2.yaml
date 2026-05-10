@@ -1,0 +1,91 @@
+# Phase 2.2 v2 — scale-only A/B test against v1.
+#
+# Question this run answers: is the val_forecast = 7.83 floor a model-capacity
+# bottleneck or a data/objective bottleneck?
+#
+# A/B-design rule: change ONE thing (model size). Hold every other hyperparam
+# identical to `configs/train/pretrain.yaml` so the comparison is clean.
+#
+# Scale-up:
+#   d_model:  320 → 480   (1.5x)
+#   n_layers:   8 →  12   (1.5x)
+#   n_heads:    8 stays   (480/8 = 60, divides cleanly)
+#   ffn_ratio:  4 stays
+#
+# Backbone params: 12 layers × 12 × 480² ≈ 33.2M  (vs v1's 9.86M, ~3.4x)
+# Total params (incl. heads + tokenizer): ~37M  (vs v1's 11.3M)
+# H200 memory budget: ~3 GB at batch 64 — well within 143 GB headroom.
+#
+# Throughput projection: v1 hit ~10 it/s on H200 (IO-bound at num_workers=0).
+# v2 has 3.4x more compute per step; with IO time roughly constant, expect
+# ~7-9 it/s, so 50K steps ≈ 90-120 min wall-clock.
+#
+# Decision rule on outcomes:
+#   - val_forecast saturates at < 7.0       → capacity matters; scale further
+#   - val_forecast saturates at 7.5-7.8     → marginal; data/objective dominates
+#   - val_forecast saturates at ≥ 7.8       → bottleneck is data/objective,
+#                                             not capacity; rethink the head
+#                                             or the targets, not the size
+
+# Data — IDENTICAL to v1.
+universe_path: data/cache
+parquet_root:  data/parquet
+scales:
+  - 5m
+  - 15m
+  - 60m
+  - day
+num_channels:  5
+window_bars:
+  5m:  256
+  15m: 192
+  60m: 168
+  day: 64
+batch_size:    64
+num_workers:   0
+
+# Tokenizer / backbone — THE ONLY DIFFERENCE FROM v1.
+d_model:       480              # was 320
+n_layers:      12               # was 8
+n_heads:       8                # 480 / 8 = 60 head_dim
+ffn_ratio:     4
+patch_len:     16
+patch_stride:  8
+max_seq_len:   128
+
+# SSL — IDENTICAL to v1.
+mask_ratio:    0.4
+contrastive_proj_dim:    128
+contrastive_temperature: 0.07
+revin_affine:  false
+forecast_scale:     "5m"
+forecast_n_patches: 6
+w_masked:      1.0
+w_ntp:         0.5
+w_contrastive: 0.0
+w_forecast:    0.5
+
+# Optim — IDENTICAL to v1.
+lr:            5e-4
+weight_decay:  1e-2
+warmup_pct:    0.05
+max_steps:     50_000
+ema_decay:     0.999
+
+# Trainer — IDENTICAL to v1 except log_dir to keep artifacts separate.
+val_every_n_steps:    1000
+limit_val_batches:    50
+checkpoint_every_n_steps: 2000
+save_top_k:               3
+precision:    "bf16-mixed"
+device:       "auto"
+
+# Universe split — IDENTICAL to v1.
+train_end:    "2025-12-31"
+val_start:    "2026-01-01"
+val_end:      "2026-04-30"
+
+# Logging — separate run dir so v1 and v2 don't collide.
+wandb_project: "daity_v3"
+wandb_offline: true
+log_dir:       "runs/pretrain_v2"

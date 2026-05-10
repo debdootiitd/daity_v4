@@ -1,0 +1,85 @@
+# Phase 2.2 v3 — 10× scale-up (third datapoint for the scaling-law test).
+#
+# Companion to v1 (11.3M) and v2 (36M). With three logarithmically-spaced
+# sizes we can fit a power law `val_forecast ≈ A × params^(-α)` and answer:
+#   - Is forecast-loss saturation a capacity bottleneck or a data/objective one?
+#   - If capacity, what slope do we get? (informs Phase-4 OB-fusion sizing)
+#
+# A/B-design rule (same as v2): change ONLY model size from v1. Hold every
+# other hyperparameter identical so the comparison is interpretable.
+#
+# Scale-up:
+#   d_model:  320 → 720    (2.25x v1, 1.5x v2)
+#   n_layers:   8 →  20    (2.5x v1, 1.67x v2)
+#   n_heads:    8 →  12    (720/12 = 60 head_dim, similar to v1's 40 / v2's 60)
+#   ffn_ratio:  4 stays
+#
+# Backbone params: 20 × 12 × 720² ≈ 124.4M  (vs v1 9.86M = 12.6x; v2 33.2M = 3.7x)
+# Total params (incl. heads + tokenizer): ~127M
+#
+# H200 memory budget: ~3-5 GB total at batch 64 in bf16. Comfortable headroom.
+# Throughput projection: v2 hit 14 it/s; v3 is 3.7x more compute per step.
+# Expected: 5-9 it/s, so 50K steps = 90-170 min wall-clock. ~2-3h total.
+
+# Data — IDENTICAL to v1/v2.
+universe_path: data/cache
+parquet_root:  data/parquet
+scales:
+  - 5m
+  - 15m
+  - 60m
+  - day
+num_channels:  5
+window_bars:
+  5m:  256
+  15m: 192
+  60m: 168
+  day: 64
+batch_size:    64
+num_workers:   0
+
+# Tokenizer / backbone — THE ONLY DIFFERENCE FROM v1/v2.
+d_model:       720              # v1=320, v2=480
+n_layers:      20               # v1=8,   v2=12
+n_heads:       12               # v1=8,   v2=8     (head_dim = 60)
+ffn_ratio:     4
+patch_len:     16
+patch_stride:  8
+max_seq_len:   128
+
+# SSL — IDENTICAL to v1/v2.
+mask_ratio:    0.4
+contrastive_proj_dim:    128
+contrastive_temperature: 0.07
+revin_affine:  false
+forecast_scale:     "5m"
+forecast_n_patches: 6
+w_masked:      1.0
+w_ntp:         0.5
+w_contrastive: 0.0
+w_forecast:    0.5
+
+# Optim — IDENTICAL to v1/v2.
+lr:            5e-4
+weight_decay:  1e-2
+warmup_pct:    0.05
+max_steps:     50_000
+ema_decay:     0.999
+
+# Trainer — IDENTICAL to v1/v2 except log_dir to keep artifacts separate.
+val_every_n_steps:    1000
+limit_val_batches:    50
+checkpoint_every_n_steps: 2000
+save_top_k:               3
+precision:    "bf16-mixed"
+device:       "auto"
+
+# Universe split — IDENTICAL to v1/v2.
+train_end:    "2025-12-31"
+val_start:    "2026-01-01"
+val_end:      "2026-04-30"
+
+# Logging — separate run dir so v1/v2/v3 don't collide.
+wandb_project: "daity_v3"
+wandb_offline: true
+log_dir:       "runs/pretrain_v3"

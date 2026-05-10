@@ -1,0 +1,105 @@
+# Phase 2.3 v3_lr — log-return inputs + log-return forecast targets.
+#
+# Hypothesis being tested: the slow forecast convergence in v1 / v2 / v2_long
+# is an artifact of predicting RevIN-normalized PRICES (which are
+# random-walk-like and force the model to "learn to subtract trend"). Switching
+# to LOG-RETURNS gives the head a stationary target with the random-walk
+# component differenced out — canonical Time-FM choice (Chronos, MOIRAI,
+# TimesFM all predict in return space, not price space).
+#
+# Stage 1 (this config): log-return inputs + targets only. 36M params.
+# Stage 2 (deferred): + Phase-1 feature engine outputs as additional channels
+# (wicks, vol_z, log_return_lags, time_covariates) — see scripts/TODO_v3_features.md.
+#
+# A/B vs v2_long: the only difference is
+#   input_form  = "log_returns"  (was "raw")
+#   target_form = "log_returns"  (was "absolute")
+# Everything else is held constant.
+#
+# Decision rule:
+#   - val_loss_forecast at convergence ≪ v2_long → log-return targets win;
+#     adopt as the Phase-2 baseline going forward
+#   - val_loss_forecast ≈ v2_long → the bottleneck is data/objective, not
+#     the target form; move on to feature engine integration (Stage 2)
+#   - val_loss_forecast ≫ v2_long → log-return form is harder for this
+#     model; investigate (unlikely)
+#
+# Cost: 150K × ~5.5 it/s on H200 = 7.6h wall-clock at batch=512.
+
+# Data — IDENTICAL to v2_long.
+universe_path: data/cache
+parquet_root:  data/parquet
+scales:
+  - 5m
+  - 15m
+  - 60m
+  - day
+num_channels:  5
+window_bars:
+  5m:  256
+  15m: 192
+  60m: 168
+  day: 64
+batch_size:    512
+num_workers:   4
+pin_memory:    true
+
+# Tokenizer / backbone — IDENTICAL to v2_long (36M params).
+d_model:       480
+n_layers:      12
+n_heads:       8
+ffn_ratio:     4
+patch_len:     16
+patch_stride:  8
+max_seq_len:   128
+
+# SSL — same weights as v2_long EXCEPT the log-return forms.
+mask_ratio:    0.4
+contrastive_proj_dim:    128
+contrastive_temperature: 0.07
+revin_affine:  false
+forecast_scale:     "5m"
+forecast_n_patches: 6
+w_masked:      1.0
+w_ntp:         0.5
+w_contrastive: 0.0
+w_forecast:    0.5
+
+# Phase 2.3 NEW: stationary log-return form for inputs + forecast targets.
+input_form:    "log_returns"     # was "raw" in v2_long
+target_form:   "log_returns"     # was "absolute" in v2_long
+
+# Optim — TUNED for log-return target stability.
+# v3_lr first attempt (lr=1.4e-3, no grad clip): forecast head exploded
+# every few hundred steps (60-1000× spikes within 100 steps) — log-return
+# targets have heavy tails (occasional large bar moves) and the unclipped
+# gradient on outlier batches blew up the forecast head. Two fixes:
+#   1. lr 1.4e-3 → 7e-4   (back off from sqrt-batch-scaling to be conservative)
+#   2. gradient_clip_val 0 → 1.0   (canonical L2 norm clip — bounds the
+#      gradient magnitude even on outlier batches; standard for transformer
+#      SSL with heavy-tailed targets)
+lr:                7e-4        # was 1.4e-3 — backed off due to log-return heavy tails
+weight_decay:      1e-2
+warmup_pct:        0.025
+max_steps:         150_000
+lr_min_ratio:      0.05
+ema_decay:         0.999
+gradient_clip_val: 1.0          # NEW Phase 2.3: L2 norm clip (Trainer-level)
+
+# Trainer — IDENTICAL to v2_long.
+val_every_n_steps:    2000
+limit_val_batches:    50
+checkpoint_every_n_steps: 5000
+save_top_k:               5
+precision:    "bf16-mixed"
+device:       "auto"
+
+# Universe split — IDENTICAL to v2_long (uses min_end_ts via CLI for val).
+train_end:    "2025-12-31"
+val_start:    "2026-01-01"
+val_end:      "2026-04-30"
+
+# Logging.
+wandb_project: "daity_v3"
+wandb_offline: true
+log_dir:       "runs/pretrain_v3_lr"

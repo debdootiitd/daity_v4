@@ -1,0 +1,2 @@
+# Project-level ruff overrides (kept minimal; main config lives in pyproject.toml).
+extend = "pyproject.toml"

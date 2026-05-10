@@ -1,0 +1,90 @@
+# --- Secrets (must be first; never commit these) ---
+sa-key.json
+.sa-key.json
+*sa-key*.json
+*service-account*.json
+*credentials*.json
+*-key.json
+.env
+.env.*
+!.env.example
+# Catch any *.env file (e.g. .grow_cred.env) and any *cred* file globally —
+# defensive nets for future secret-shaped files that don't match the patterns above.
+*.env
+!.env.example
+*cred*.env
+*_cred*
+*.token
+
+# --- Data caches and artifacts ---
+data/
+cache/
+parquet/
+*.parquet
+*.duckdb
+*.duckdb.wal
+checkpoints/
+runs/
+wandb/
+mlruns/
+reports/*.html
+reports/*.json
+!reports/.gitkeep
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual envs
+.venv/
+.venv-*/
+venv/
+env/
+ENV/
+
+# Audit run artifacts
+audit_run.log
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# Notebooks
+.ipynb_checkpoints/
+*.ipynb_meta
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/

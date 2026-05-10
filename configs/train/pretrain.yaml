@@ -1,0 +1,91 @@
+# Phase 2 SSL pretraining config — DESIGN §3.1 / §3.2.
+#
+# This is the BASE config for a real A100 / Vast pretraining run. The CPU
+# smoke test overrides max_steps + d_model + n_layers via CLI flags
+# (see `daity-pretrain --help` and `notebooks/phase_2_writeup.py`).
+#
+# Loaded by `daity.scripts.pretrain_cli.main`.
+
+# Data
+universe_path: data/cache         # SymbolMaster cache root
+parquet_root:  data/parquet       # ParquetStore root
+scales:
+  - 5m
+  - 15m
+  - 60m
+  - day
+num_channels:  5
+window_bars:
+  5m:  256
+  15m: 192
+  60m: 168
+  day: 64
+batch_size:    64                 # A100-40GB headroom; lower on smaller GPUs
+# num_workers=0 (single-process loading) avoids the fork+PyArrow wedge
+# that hangs the cold-start phase on multi-worker DataLoaders. On H200
+# the GPU is fast enough that single-process IO keeps up; multi-worker
+# tuning is a Phase 2.2 optimization (review finding #11).
+num_workers:   0
+
+# Tokenizer / backbone (DESIGN §3.1)
+d_model:       320
+n_layers:      8
+n_heads:       8
+ffn_ratio:     4
+patch_len:     16
+patch_stride:  8
+max_seq_len:   128                # max patches across all scales + 1 forecast
+
+# SSL objectives (DESIGN §3.2)
+mask_ratio:    0.4
+contrastive_proj_dim:    128
+contrastive_temperature: 0.07
+# RevIN affine MUST be false for SSL — see DESIGN amendment 12. Setting
+# this true allows gamma → 0 collapse that drives MSE → 0 trivially.
+revin_affine:  false
+# Multi-horizon forecast on FORECAST token. 6 non-overlapping patches at
+# 5m × patch_len=16 = 96 bars = 8h ≈ 1 trading day forward.
+# Set forecast_n_patches: 0 to disable the head entirely (ablation).
+forecast_scale:     "5m"
+forecast_n_patches: 6
+w_masked:      1.0
+w_ntp:         0.5
+# Contrastive weight set to 0 for v1 (DESIGN amendment 11). With the Phase-2
+# placeholder positive pair (causal vs non-causal of same sample), the
+# causal-pass FORECAST hidden is constant across the batch — InfoNCE collapses
+# to log(B), zero gradient signal. Cross-symbol same-date positives land in
+# Phase 3; until then the term contributes a constant offset that's better
+# disabled than logged as "PASS contrast plateau ~log(B)".
+w_contrastive: 0.0
+w_forecast:    0.5
+
+# Optim
+lr:            5e-4
+weight_decay:  1e-2
+warmup_pct:    0.05
+max_steps:     50_000             # ~2-3 days on A100-40GB at batch 64
+ema_decay:     0.999
+
+# Trainer
+val_every_n_steps:    1000
+limit_val_batches:    50
+# Checkpoints (DESIGN §3.2: top-3 by val MSE + last). Cadence is step-driven
+# rather than wall-clock for deterministic resume behavior.
+# `checkpoint_every_n_steps: 2000` ≈ every ~2h on A100-40G batch 64 at the
+# observed ~0.3 step/s throughput; H200 hits the cadence sooner (just more
+# checkpoints land — `save_top_k` keeps disk bounded).
+checkpoint_every_n_steps: 2000
+save_top_k:               3
+precision:    "bf16-mixed"        # "32-true" on CPU smoke
+device:       "auto"              # "cpu" / "mps" / "cuda" / "auto"
+
+# Universe split — uses the walk-forward splitter on the calendar.
+# Smoke mode: single (train, val) pair built from a fixed cutoff.
+train_end:    "2025-12-31"        # train: history < this date
+val_start:    "2026-01-01"        # val:   [val_start, val_end]
+val_end:      "2026-04-30"
+
+# Logging
+wandb_project: "daity_v3"
+wandb_offline: true               # flip to false on Vast for live runs
+log_dir:       "runs/pretrain"

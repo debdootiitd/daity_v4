@@ -1,0 +1,102 @@
+[project]
+name = "daity"
+version = "0.1.0"
+description = "Foundation-model algo trading system for NSE equities"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+authors = [{ name = "Debdoot" }]
+
+dependencies = [
+    # data / storage
+    "google-cloud-bigquery>=3.25",
+    "google-cloud-bigquery-storage>=2.27",
+    "pyarrow>=17.0",
+    "duckdb>=1.1",
+    "polars>=1.6",
+    "numpy>=1.26,<2.2",
+    "pandas>=2.2",         # some libs (xgboost, sklearn) interop via pandas
+    # config / cli
+    "hydra-core>=1.3",
+    "omegaconf>=2.3",
+    "python-dotenv>=1.0",
+    "click>=8.1",
+    "rich>=13.7",
+    # util
+    "pyyaml>=6.0",
+    "tqdm>=4.66",
+    # ingest (Phase 1)
+    "growwapi>=1.5",
+    "kiteconnect>=5.0",
+    "pandas-market-calendars>=4.4",
+    "httpx>=0.27",
+    "google-cloud-storage>=2.18",
+]
+
+[project.optional-dependencies]
+ml = [
+    "torch>=2.4",
+    "lightning>=2.4",
+    "peft>=0.12",
+    "scikit-learn>=1.5",
+    "xgboost>=2.1",
+    "wandb>=0.18",
+]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "ipykernel>=6.29",
+    "jupyter>=1.1",
+    "jupytext>=1.16",     # for `.py` ↔ `.ipynb` round-trip on phase write-up notebooks
+    "matplotlib>=3.9",     # plots in the phase write-up notebooks
+]
+
+[project.scripts]
+daity-audit = "daity.scripts.phase0_audit:main"
+daity-refresh-calendar = "daity.scripts.refresh_calendar:main"
+daity-kite-login = "daity.scripts.kite_login:main"
+daity-refresh-ohlcv = "daity.scripts.refresh_ohlcv:main"
+daity-fix-daily-ts = "daity.scripts.fix_daily_ts:main"
+daity-readjust-symbols = "daity.scripts.readjust_symbols:main"
+daity-detect-corp-actions = "daity.scripts.detect_corp_actions:main"
+daity-fix-pointwise = "daity.scripts.fix_pointwise:main"
+daity-ingest-parquet = "daity.scripts.ingest_parquet:main"
+daity-check-staleness = "daity.scripts.check_staleness:main"
+daity-pretrain = "daity.scripts.pretrain_cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["daity"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "RET", "PL"]
+# Tensor-shape unpacking (`B, T, D = x.shape`) and `import F` / `import L` are
+# universal PyTorch / Lightning conventions; suppressing N806/N812 keeps lint
+# from fighting them.
+ignore = ["PLR0913", "PLR2004", "E501", "N806", "N812"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: requires live BigQuery credentials",
+    "leakage: feature-pipeline leakage gating tests",
+]
