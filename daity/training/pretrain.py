@@ -48,11 +48,17 @@ import torch
 from torch import nn
 
 from daity.data.datasets import FORECAST_FUTURE_KEY
-from daity.data.preprocess import IDX_CLOSE, to_log_returns
+from daity.data.preprocess import (
+    IDX_CLOSE,
+    N_CHANNELS_OHLCV,
+    to_log_returns,
+    to_log_returns_partial,
+)
 from daity.data.tokenizer_targets import build_forecast_targets, build_targets
 from daity.models.backbone import Backbone
 from daity.models.heads import (
     ContrastiveHead,
+    CrossAttentionForecastHead,
     MaskedReconstructionHead,
     MultiHorizonForecastHead,
     NextPatchHead,
@@ -110,6 +116,23 @@ class PretrainConfig:
     # trading day forward.
     forecast_scale: str = "5m"
     forecast_n_patches: int = 6
+    # Phase 2.4 (per architect review §3.1): forecast head architecture.
+    # "mlp" — original single-vector MLP from FORECAST token (legacy; preserves
+    #         v1/v2/v2_long/v3_lr/v3_features behavior for back-compat).
+    # "cross_attention" — H learnable queries cross-attend over the full
+    #         encoder output (canonical Time-FM design, PatchTST/MOIRAI/Chronos).
+    #         Removes the single-vector bottleneck that's the leading
+    #         hypothesis for the val_forecast plateau.
+    forecast_head_type: str = "mlp"
+    # Number of channels the FORECAST head predicts. Defaults to None ⇒ same
+    # as `num_channels` (back-compat for 5-channel runs). For 18-channel
+    # feature_parquet runs, set this to 5 — predict ONLY the bar_channels
+    # (OHLCV in log-return form). The 13 derived feature channels (log-return
+    # lags, wicks, vol_z, time covariates) include heavy-tailed targets
+    # (especially log_volume) that produce ~10⁵-10⁸ MSE spikes on outlier
+    # batches even with gradient clipping. Forecasting only OHLCV-log-returns
+    # is also the canonical target form for Phase 3's quantile head.
+    forecast_num_channels: int | None = None
     # Input / target representation (Phase 2.3). Default "raw" matches v1/v2/v2_long
     # behavior — the tokenizer sees raw OHLCV and RevIN normalizes per-window;
     # forecast targets are RevIN-normalized raw OHLCV.
@@ -178,14 +201,44 @@ class PretrainModule(L.LightningModule):
         self.contrastive_head = ContrastiveHead(
             d_model=cfg.d_model, proj_dim=cfg.contrastive_proj_dim,
         )
-        # Multi-horizon forecast head reads the FORECAST token's non-causal
-        # hidden. Disabled (None) when cfg.forecast_n_patches == 0 — keeps
-        # the head out of the param count for ablation runs.
+        # Forecast-target channel count: defaults to num_channels (back-compat),
+        # but for 18-channel feature_parquet runs we want to forecast only
+        # the 5 OHLCV bar_channels (heavy-tailed log_volume / vol_z make the
+        # other 13 channels destructively bad MSE targets — see config doc).
+        self._forecast_num_channels = (
+            cfg.forecast_num_channels
+            if cfg.forecast_num_channels is not None
+            else cfg.num_channels
+        )
+
+        # Multi-horizon forecast head. Disabled (None) when
+        # cfg.forecast_n_patches == 0 — keeps the head out of the param
+        # count for ablation runs.
+        # `forecast_head_type` (Phase 2.4) selects between:
+        #   "mlp"             — single-vector MLP from FORECAST token (legacy)
+        #   "cross_attention" — H queries cross-attend over full encoder output
+        # See `daity/models/heads.py` for the architectural rationale.
+        self.forecast_head: nn.Module | None
         if cfg.forecast_n_patches > 0:
-            self.forecast_head: MultiHorizonForecastHead | None = MultiHorizonForecastHead(
-                d_model=cfg.d_model, n_patches=cfg.forecast_n_patches,
-                num_channels=cfg.num_channels, patch_len=cfg.patch_len,
-            )
+            if cfg.forecast_head_type == "mlp":
+                self.forecast_head = MultiHorizonForecastHead(
+                    d_model=cfg.d_model, n_patches=cfg.forecast_n_patches,
+                    num_channels=self._forecast_num_channels,
+                    patch_len=cfg.patch_len,
+                )
+            elif cfg.forecast_head_type == "cross_attention":
+                self.forecast_head = CrossAttentionForecastHead(
+                    d_model=cfg.d_model, n_patches=cfg.forecast_n_patches,
+                    num_channels=self._forecast_num_channels,
+                    patch_len=cfg.patch_len,
+                    n_heads=cfg.n_heads,
+                )
+            else:
+                msg = (
+                    f"Unknown forecast_head_type {cfg.forecast_head_type!r}; "
+                    f"expected 'mlp' or 'cross_attention'"
+                )
+                raise ValueError(msg)
         else:
             self.forecast_head = None
 
@@ -268,9 +321,15 @@ class PretrainModule(L.LightningModule):
             forecast_anchor_close = batch[self.cfg.forecast_scale][:, -1, IDX_CLOSE].clone()
 
         if self.cfg.input_form == "log_returns":
-            # Each scale uses self-anchor (anchor_close=None): close_ret[0]=0
-            # is the right "no information" value at the window boundary.
-            batch = {sc: to_log_returns(x) for sc, x in batch.items()}
+            # When num_channels > 5, only the first 5 channels are bar_channels
+            # (raw OHLCV); the rest are already-stationary feature-engine
+            # outputs (log-return lags, wicks, vol_z, time covariates) — they
+            # pass through unchanged. `to_log_returns_partial` handles both
+            # the 5-channel and ≥5-channel cases.
+            batch = {
+                sc: to_log_returns_partial(x, n_bar_channels=N_CHANNELS_OHLCV)
+                for sc, x in batch.items()
+            }
 
         if future_bars is not None and self.cfg.target_form == "log_returns":
             if forecast_anchor_close is None:
@@ -279,8 +338,10 @@ class PretrainModule(L.LightningModule):
                     "in batch (it should — check cfg.scales)"
                 )
                 raise RuntimeError(msg)
-            future_bars = to_log_returns(
-                future_bars, anchor_close=forecast_anchor_close,
+            future_bars = to_log_returns_partial(
+                future_bars,
+                n_bar_channels=N_CHANNELS_OHLCV,
+                anchor_close=forecast_anchor_close,
             )
 
         # ----- Build targets BEFORE feeding tokenizer (we need the
@@ -323,11 +384,14 @@ class PretrainModule(L.LightningModule):
             z_nc, z_c, temperature=self.cfg.contrastive_temperature,
         )
 
-        # ----- Multi-horizon forecast path: FORECAST token (non-causal) → next H patches.
-        # Reads hidden_nc[:, 0] (the FORECAST token after the encoder has
-        # attended to the full input window). Targets are the dataset's
-        # future bars, normalized using the tokenizer's cached RevIN
-        # stats for forecast_scale (filled by tokenizer(batch) above). -----
+        # ----- Multi-horizon forecast path. -----
+        # MLP head (legacy) reads hidden_nc[:, 0] — the FORECAST token's
+        # post-encoder hidden state, a single (B, d_model) bottleneck.
+        # Cross-attention head reads hidden_nc[:, 1:] — the full patch-token
+        # encoder output (B, T-1, d_model), letting H learnable forecast
+        # queries attend over all 81 patch tokens. Architect's review §3.1:
+        # the MLP's single-vector bottleneck is the leading hypothesis for
+        # the val_forecast plateau; cross-attention removes it.
         loss_forecast: torch.Tensor
         if self.forecast_head is not None and future_bars is not None:
             forecast_targets = build_forecast_targets(
@@ -336,8 +400,17 @@ class PretrainModule(L.LightningModule):
                 n_patches=self.cfg.forecast_n_patches,
                 patch_len=self.cfg.patch_len,
                 tokenizer=self.tokenizer,
-            )                                                 # (B, H, C, patch_len)
-            forecast_pred = self.forecast_head(hidden_nc[:, 0])
+            )                                                 # (B, H, num_channels, patch_len)
+            # Slice to forecast_num_channels — for 18-channel feature_parquet
+            # runs this drops the heavy-tailed derived feature targets and
+            # keeps only the OHLCV bar_channels (channels 0:5). For 5-channel
+            # raw OHLCV runs this is a no-op (forecast_num_channels == 5).
+            if self._forecast_num_channels < self.cfg.num_channels:
+                forecast_targets = forecast_targets[:, :, :self._forecast_num_channels, :]
+            if self.cfg.forecast_head_type == "cross_attention":
+                forecast_pred = self.forecast_head(hidden_nc[:, 1:])
+            else:                                            # "mlp"
+                forecast_pred = self.forecast_head(hidden_nc[:, 0])
             loss_forecast = ((forecast_pred - forecast_targets) ** 2).mean()
         else:
             # Forecast head disabled or batch lacks future bars: contribute

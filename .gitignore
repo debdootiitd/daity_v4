@@ -17,16 +17,19 @@ sa-key.json
 *.token
 
 # --- Data caches and artifacts ---
-data/
-cache/
-parquet/
+# IMPORTANT: leading slash anchors these to the repo root. Without it,
+# `data/` would match `daity/data/` (the source package!) and silently
+# exclude the entire Phase-1 data layer from git. Caught in Phase 2.4 PR.
+/data/
+/cache/
+/parquet/
 *.parquet
 *.duckdb
 *.duckdb.wal
-checkpoints/
-runs/
-wandb/
-mlruns/
+/checkpoints/
+/runs/
+/wandb/
+/mlruns/
 reports/*.html
 reports/*.json
 !reports/.gitkeep

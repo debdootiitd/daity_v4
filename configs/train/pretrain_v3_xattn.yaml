@@ -1,0 +1,106 @@
+# Phase 2.4 v3_xattn — cross-attention forecast head, single architectural change.
+#
+# Hypothesis (per architect review §3.1, hypothesis #2 ranked at 50% prob):
+# the val_forecast plateau across v2_long (22.8) and v3_lr (4.4) is caused by
+# the FORECAST head's single-vector bottleneck — the head reads only `(B, 480)`
+# while the recon and NTP heads read the full `(B, 81, 480)` ≈ 39K-dim
+# encoder output. NTP and recon converge cleanly; forecast plateaus
+# immediately. This is direct evidence the head architecture is the issue.
+#
+# Phase 2.4 changes ONLY the forecast head: from 2-layer MLP over the
+# FORECAST token's hidden, to a 2-layer cross-attention head where 6
+# learnable forecast queries attend over the full encoder output. Canonical
+# Time-FM design (PatchTST-2024, MOIRAI, Chronos, TimesFM all use this).
+#
+# A/B vs v3_features: ONLY `forecast_head_type` changes. Same input
+# channels (18), same target form (log_returns), same training schedule.
+# This is a clean isolation of the architecture-vs-signal hypothesis.
+#
+# Decision rule:
+#   - val_forecast meaningfully < v3_features's plateau → architecture was
+#     the bottleneck (hypothesis #2 wins). Adopt as Phase-2 baseline,
+#     ship to Phase 3 with this checkpoint.
+#   - val_forecast ≈ v3_features's plateau → architecture isn't the
+#     issue; the bottleneck is fundamental signal limit (hypothesis #5).
+#     Phase 2's role becomes "produce a non-noise representation"; the
+#     real Phase-2 acceptance happens at Phase 3 (rank-IC > XGBoost).
+#
+# Cost: cross-attn head adds ~2M params (2.0M MLP → 3.9M xattn at 18ch).
+# Expected throughput: ~5 it/s (slightly slower than v3_features's 5.5 due
+# to extra head compute). 150K steps ≈ 8.5h on H200.
+
+# Data — IDENTICAL to v3_features.
+universe_path: data/cache
+parquet_root:  data/parquet
+feature_root:  data/features_parquet
+scales:
+  - 5m
+  - 15m
+  - 60m
+  - day
+num_channels:  18
+window_bars:
+  5m:  256
+  15m: 192
+  60m: 168
+  day: 64
+batch_size:    512
+num_workers:   4
+pin_memory:    true
+
+# Tokenizer / backbone — IDENTICAL to v3_features.
+d_model:       480
+n_layers:      12
+n_heads:       8
+ffn_ratio:     4
+patch_len:     16
+patch_stride:  8
+max_seq_len:   128
+
+# SSL — Phase 2.4: forecast_head_type IS THE ONE CHANGE.
+mask_ratio:    0.4
+contrastive_proj_dim:    128
+contrastive_temperature: 0.07
+revin_affine:  false
+forecast_scale:     "5m"
+forecast_n_patches: 6
+forecast_head_type: "cross_attention"   # was implicitly "mlp" everywhere prior
+forecast_num_channels: 5                # OHLCV-log-returns only; see v3_features doc
+w_masked:      1.0
+w_ntp:         0.5
+w_contrastive: 0.0
+w_forecast:    1.0                       # bumped 0.5 → 1.0 per architect §8 — the
+                                         # downstream consumer is the FORECAST
+                                         # representation; weight it on equal
+                                         # footing with masked-recon.
+
+# Phase 2.3 carried forward.
+input_form:    "log_returns"
+target_form:   "log_returns"
+
+# Optim — IDENTICAL to v3_features.
+lr:                7e-4
+weight_decay:      1e-2
+warmup_pct:        0.025
+max_steps:         150_000
+lr_min_ratio:      0.05
+ema_decay:         0.999
+gradient_clip_val: 1.0
+
+# Trainer.
+val_every_n_steps:    2000
+limit_val_batches:    50
+checkpoint_every_n_steps: 5000
+save_top_k:               5
+precision:    "bf16-mixed"
+device:       "auto"
+
+# Universe split.
+train_end:    "2025-12-31"
+val_start:    "2026-01-01"
+val_end:      "2026-04-30"
+
+# Logging.
+wandb_project: "daity_v3"
+wandb_offline: true
+log_dir:       "runs/pretrain_v3_xattn"

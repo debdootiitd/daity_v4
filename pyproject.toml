@@ -64,6 +64,7 @@ daity-fix-pointwise = "daity.scripts.fix_pointwise:main"
 daity-ingest-parquet = "daity.scripts.ingest_parquet:main"
 daity-check-staleness = "daity.scripts.check_staleness:main"
 daity-pretrain = "daity.scripts.pretrain_cli:main"
+daity-precompute-features = "daity.scripts.precompute_features:main"
 
 [build-system]
 requires = ["hatchling"]

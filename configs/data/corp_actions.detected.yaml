@@ -1,0 +1,687 @@
+readjustments:
+- symbol: 360ONE
+  event: "detected: ratio 1.0296 \u2192 0.9796 (boundary 2020-03-26)"
+  record_date: '2020-03-26'
+  cutoff_date_ist: '2020-03-26'
+  ratio: 1.051099
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: 360ONE
+  event: "detected: ratio 1.0038 \u2192 0.9443 (boundary 2021-02-11)"
+  record_date: '2021-02-11'
+  cutoff_date_ist: '2021-02-11'
+  ratio: 1.062962
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: 360ONE
+  event: "detected: ratio 0.9443 \u2192 1.0069 (boundary 2021-02-12)"
+  record_date: '2021-02-12'
+  cutoff_date_ist: '2021-02-12'
+  ratio: 0.937882
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: 360ONE
+  event: "detected: ratio 1.0149 \u2192 0.9528 (boundary 2022-02-14)"
+  record_date: '2022-02-14'
+  cutoff_date_ist: '2022-02-14'
+  ratio: 1.065123
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: 360ONE
+  event: "detected: ratio 0.9528 \u2192 1.0039 (boundary 2022-02-15)"
+  record_date: '2022-02-15'
+  cutoff_date_ist: '2022-02-15'
+  ratio: 0.949062
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: ADANIGREEN
+  event: "detected: ratio 1.0000 \u2192 0.9452 (boundary 2020-03-13)"
+  record_date: '2020-03-13'
+  cutoff_date_ist: '2020-03-13'
+  ratio: 1.057941
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: ADANIGREEN
+  event: "detected: ratio 1.0534 \u2192 1.0015 (boundary 2020-12-01)"
+  record_date: '2020-12-01'
+  cutoff_date_ist: '2020-12-01'
+  ratio: 1.051815
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: ADANIPOWER
+  event: "detected: ratio 0.9639 \u2192 1.0160 (boundary 2019-02-27)"
+  record_date: '2019-02-27'
+  cutoff_date_ist: '2019-02-27'
+  ratio: 0.948778
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: ALPL30IETF
+  event: "detected: ratio 0.9994 \u2192 0.8630 (boundary 2023-01-27)"
+  record_date: '2023-01-27'
+  cutoff_date_ist: '2023-01-27'
+  ratio: 1.158086
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: ALPL30IETF
+  event: "detected: ratio 0.8630 \u2192 1.0030 (boundary 2023-01-30)"
+  record_date: '2023-01-30'
+  cutoff_date_ist: '2023-01-30'
+  ratio: 0.860462
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: ASTRAL
+  event: "detected: ratio 0.9924 \u2192 1.0487 (boundary 2020-12-31)"
+  record_date: '2020-12-31'
+  cutoff_date_ist: '2020-12-31'
+  ratio: 0.946303
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: BANKBARODA
+  event: "detected: ratio 1.0046 \u2192 0.9493 (boundary 2020-03-31)"
+  record_date: '2020-03-31'
+  cutoff_date_ist: '2020-03-31'
+  ratio: 1.058236
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: BANKBARODA
+  event: "detected: ratio 0.9493 \u2192 1.0025 (boundary 2020-04-01)"
+  record_date: '2020-04-01'
+  cutoff_date_ist: '2020-04-01'
+  ratio: 0.946959
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: BLUESTARCO
+  event: "detected: ratio 1.0035 \u2192 0.9362 (boundary 2021-03-26)"
+  record_date: '2021-03-26'
+  cutoff_date_ist: '2021-03-26'
+  ratio: 1.071881
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: BLUESTARCO
+  event: "detected: ratio 0.9362 \u2192 0.9999 (boundary 2021-03-30)"
+  record_date: '2021-03-30'
+  cutoff_date_ist: '2021-03-30'
+  ratio: 0.936314
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: BLUESTARCO
+  event: "detected: ratio 1.0067 \u2192 0.9397 (boundary 2022-06-17)"
+  record_date: '2022-06-17'
+  cutoff_date_ist: '2022-06-17'
+  ratio: 1.071323
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: BLUESTARCO
+  event: "detected: ratio 0.9397 \u2192 1.0042 (boundary 2022-06-20)"
+  record_date: '2022-06-20'
+  cutoff_date_ist: '2022-06-20'
+  ratio: 0.935777
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: BPCL
+  event: "detected: ratio 0.9782 \u2192 0.8808 (boundary 2020-03-12)"
+  record_date: '2020-03-12'
+  cutoff_date_ist: '2020-03-12'
+  ratio: 1.11059
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: BPCL
+  event: "detected: ratio 0.8808 \u2192 0.9727 (boundary 2020-03-13)"
+  record_date: '2020-03-13'
+  cutoff_date_ist: '2020-03-13'
+  ratio: 0.905484
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: CHOLAFIN
+  event: "detected: ratio 0.9928 \u2192 1.0621 (boundary 2020-03-19)"
+  record_date: '2020-03-19'
+  cutoff_date_ist: '2020-03-19'
+  ratio: 0.934736
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: CHOLAFIN
+  event: "detected: ratio 1.0621 \u2192 1.0004 (boundary 2020-03-20)"
+  record_date: '2020-03-20'
+  cutoff_date_ist: '2020-03-20'
+  ratio: 1.061748
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: COCHINSHIP
+  event: "detected: ratio 0.9974 \u2192 1.1463 (boundary 2020-03-18)"
+  record_date: '2020-03-18'
+  cutoff_date_ist: '2020-03-18'
+  ratio: 0.87018
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: COCHINSHIP
+  event: "detected: ratio 1.1463 \u2192 0.9987 (boundary 2020-03-19)"
+  record_date: '2020-03-19'
+  cutoff_date_ist: '2020-03-19'
+  ratio: 1.147732
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: COCHINSHIP
+  event: "detected: ratio 0.9964 \u2192 1.0831 (boundary 2020-03-30)"
+  record_date: '2020-03-30'
+  cutoff_date_ist: '2020-03-30'
+  ratio: 0.920022
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: COCHINSHIP
+  event: "detected: ratio 1.0831 \u2192 1.0036 (boundary 2020-03-31)"
+  record_date: '2020-03-31'
+  cutoff_date_ist: '2020-03-31'
+  ratio: 1.079195
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: COFORGE
+  event: "detected: ratio 1.0058 \u2192 0.9444 (boundary 2020-03-24)"
+  record_date: '2020-03-24'
+  cutoff_date_ist: '2020-03-24'
+  ratio: 1.06498
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: GODFRYPHLP
+  event: "detected: ratio 0.9625 \u2192 1.0367 (boundary 2024-08-20)"
+  record_date: '2024-08-20'
+  cutoff_date_ist: '2024-08-20'
+  ratio: 0.928438
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: GODREJPROP
+  event: "detected: ratio 1.0145 \u2192 0.9513 (boundary 2020-03-12)"
+  record_date: '2020-03-12'
+  cutoff_date_ist: '2020-03-12'
+  ratio: 1.066395
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: GODREJPROP
+  event: "detected: ratio 0.9513 \u2192 1.0034 (boundary 2020-03-13)"
+  record_date: '2020-03-13'
+  cutoff_date_ist: '2020-03-13'
+  ratio: 0.948163
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: HCLTECH
+  event: "detected: ratio 0.9845 \u2192 1.0495 (boundary 2020-03-25)"
+  record_date: '2020-03-25'
+  cutoff_date_ist: '2020-03-25'
+  ratio: 0.938049
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: IDEA
+  event: "detected: ratio 1.0000 \u2192 0.9420 (boundary 2019-07-30)"
+  record_date: '2019-07-30'
+  cutoff_date_ist: '2019-07-30'
+  ratio: 1.061538
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: IDEA
+  event: "detected: ratio 0.9420 \u2192 1.0074 (boundary 2019-07-31)"
+  record_date: '2019-07-31'
+  cutoff_date_ist: '2019-07-31'
+  ratio: 0.935153
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: IDEA
+  event: "detected: ratio 1.0482 \u2192 0.9880 (boundary 2019-10-25)"
+  record_date: '2019-10-25'
+  cutoff_date_ist: '2019-10-25'
+  ratio: 1.060976
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: KALYANKJIL
+  event: "detected: ratio 0.9975 \u2192 0.9311 (boundary 2022-05-11)"
+  record_date: '2022-05-11'
+  cutoff_date_ist: '2022-05-11'
+  ratio: 1.071385
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: KALYANKJIL
+  event: "detected: ratio 0.9311 \u2192 1.0131 (boundary 2022-05-12)"
+  record_date: '2022-05-12'
+  cutoff_date_ist: '2022-05-12'
+  ratio: 0.919018
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: KPITTECH
+  event: "detected: ratio 1.0149 \u2192 0.9618 (boundary 2020-03-02)"
+  record_date: '2020-03-02'
+  cutoff_date_ist: '2020-03-02'
+  ratio: 1.055245
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: KPITTECH
+  event: "detected: ratio 1.0587 \u2192 0.9478 (boundary 2020-03-18)"
+  record_date: '2020-03-18'
+  cutoff_date_ist: '2020-03-18'
+  ratio: 1.117061
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: KPITTECH
+  event: "detected: ratio 0.9478 \u2192 1.0323 (boundary 2020-03-19)"
+  record_date: '2020-03-19'
+  cutoff_date_ist: '2020-03-19'
+  ratio: 0.918163
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: LOWVOLIETF
+  event: "detected: ratio 1.0477 \u2192 0.9600 (boundary 2020-03-17)"
+  record_date: '2020-03-17'
+  cutoff_date_ist: '2020-03-17'
+  ratio: 1.091327
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: LOWVOLIETF
+  event: "detected: ratio 1.0052 \u2192 0.9232 (boundary 2022-02-24)"
+  record_date: '2022-02-24'
+  cutoff_date_ist: '2022-02-24'
+  ratio: 1.08877
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: LOWVOLIETF
+  event: "detected: ratio 0.9232 \u2192 0.9992 (boundary 2022-02-25)"
+  record_date: '2022-02-25'
+  cutoff_date_ist: '2022-02-25'
+  ratio: 0.923941
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: MOTHERSON
+  event: "detected: ratio 1.0083 \u2192 0.9396 (boundary 2020-03-13)"
+  record_date: '2020-03-13'
+  cutoff_date_ist: '2020-03-13'
+  ratio: 1.0731
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: MOTHERSON
+  event: "detected: ratio 0.9396 \u2192 1.0049 (boundary 2020-03-16)"
+  record_date: '2020-03-16'
+  cutoff_date_ist: '2020-03-16'
+  ratio: 0.935026
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: MOTILALOFS
+  event: "detected: ratio 1.0023 \u2192 0.9338 (boundary 2019-10-31)"
+  record_date: '2019-10-31'
+  cutoff_date_ist: '2019-10-31'
+  ratio: 1.073322
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: MOTILALOFS
+  event: "detected: ratio 0.9338 \u2192 1.0033 (boundary 2019-11-01)"
+  record_date: '2019-11-01'
+  cutoff_date_ist: '2019-11-01'
+  ratio: 0.930778
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: NESTLEIND
+  event: "detected: ratio 1.0005 \u2192 1.0553 (boundary 2020-11-27)"
+  record_date: '2020-11-27'
+  cutoff_date_ist: '2020-11-27'
+  ratio: 0.948017
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: NESTLEIND
+  event: "detected: ratio 1.0553 \u2192 0.9995 (boundary 2020-12-01)"
+  record_date: '2020-12-01'
+  cutoff_date_ist: '2020-12-01'
+  ratio: 1.055822
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: NHPC
+  event: "detected: ratio 1.0111 \u2192 1.0840 (boundary 2020-03-18)"
+  record_date: '2020-03-18'
+  cutoff_date_ist: '2020-03-18'
+  ratio: 0.93273
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: NHPC
+  event: "detected: ratio 1.0840 \u2192 1.0000 (boundary 2020-03-19)"
+  record_date: '2020-03-19'
+  cutoff_date_ist: '2020-03-19'
+  ratio: 1.084034
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: NMDC
+  event: "detected: ratio 1.0943 \u2192 1.2822 (boundary 2020-03-18)"
+  record_date: '2020-03-18'
+  cutoff_date_ist: '2020-03-18'
+  ratio: 0.853463
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: NMDC
+  event: "detected: ratio 1.2822 \u2192 1.1056 (boundary 2020-03-19)"
+  record_date: '2020-03-19'
+  cutoff_date_ist: '2020-03-19'
+  ratio: 1.159728
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: NMDC
+  event: "detected: ratio 0.9981 \u2192 0.9467 (boundary 2022-10-27)"
+  record_date: '2022-10-27'
+  cutoff_date_ist: '2022-10-27'
+  ratio: 1.054269
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: ONGC
+  event: "detected: ratio 0.9758 \u2192 1.0658 (boundary 2020-03-18)"
+  record_date: '2020-03-18'
+  cutoff_date_ist: '2020-03-18'
+  ratio: 0.915521
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: ONGC
+  event: "detected: ratio 1.0658 \u2192 0.9770 (boundary 2020-03-19)"
+  record_date: '2020-03-19'
+  cutoff_date_ist: '2020-03-19'
+  ratio: 1.090902
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PAGEIND
+  event: "detected: ratio 1.0011 \u2192 1.0705 (boundary 2025-03-27)"
+  record_date: '2025-03-27'
+  cutoff_date_ist: '2025-03-27'
+  ratio: 0.935135
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PAGEIND
+  event: "detected: ratio 1.0705 \u2192 0.9911 (boundary 2025-03-28)"
+  record_date: '2025-03-28'
+  cutoff_date_ist: '2025-03-28'
+  ratio: 1.080083
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PATANJALI
+  event: "detected: ratio 1.0038 \u2192 0.9453 (boundary 2023-07-14)"
+  record_date: '2023-07-14'
+  cutoff_date_ist: '2023-07-14'
+  ratio: 1.061858
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PATANJALI
+  event: "detected: ratio 0.9453 \u2192 0.9995 (boundary 2023-07-17)"
+  record_date: '2023-07-17'
+  cutoff_date_ist: '2023-07-17'
+  ratio: 0.945761
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PERSISTENT
+  event: "detected: ratio 1.0078 \u2192 0.9567 (boundary 2020-03-16)"
+  record_date: '2020-03-16'
+  cutoff_date_ist: '2020-03-16'
+  ratio: 1.053429
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PERSISTENT
+  event: "detected: ratio 0.9412 \u2192 1.0027 (boundary 2020-03-25)"
+  record_date: '2020-03-25'
+  cutoff_date_ist: '2020-03-25'
+  ratio: 0.938597
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PHOENIXLTD
+  event: "detected: ratio 0.9742 \u2192 1.0439 (boundary 2020-03-19)"
+  record_date: '2020-03-19'
+  cutoff_date_ist: '2020-03-19'
+  ratio: 0.933268
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PHOENIXLTD
+  event: "detected: ratio 1.0058 \u2192 0.9576 (boundary 2020-03-26)"
+  record_date: '2020-03-26'
+  cutoff_date_ist: '2020-03-26'
+  ratio: 1.050321
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PHOENIXLTD
+  event: "detected: ratio 0.9576 \u2192 1.0175 (boundary 2020-03-27)"
+  record_date: '2020-03-27'
+  cutoff_date_ist: '2020-03-27'
+  ratio: 0.941107
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PHOENIXLTD
+  event: "detected: ratio 0.9946 \u2192 0.9431 (boundary 2020-09-28)"
+  record_date: '2020-09-28'
+  cutoff_date_ist: '2020-09-28'
+  ratio: 1.054577
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PHOENIXLTD
+  event: "detected: ratio 0.9431 \u2192 1.0095 (boundary 2020-09-29)"
+  record_date: '2020-09-29'
+  cutoff_date_ist: '2020-09-29'
+  ratio: 0.934222
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PHOENIXLTD
+  event: "detected: ratio 1.0108 \u2192 0.9505 (boundary 2024-09-20)"
+  record_date: '2024-09-20'
+  cutoff_date_ist: '2024-09-20'
+  ratio: 1.063414
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PHOENIXLTD
+  event: "detected: ratio 0.9505 \u2192 1.0056 (boundary 2024-09-23)"
+  record_date: '2024-09-23'
+  cutoff_date_ist: '2024-09-23'
+  ratio: 0.945273
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PIIND
+  event: "detected: ratio 8.8094 \u2192 1.0002 (boundary 2019-01-02)"
+  record_date: '2019-01-02'
+  cutoff_date_ist: '2019-01-02'
+  ratio: 8.807335
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PIIND
+  event: "detected: ratio 1.0002 \u2192 9.0408 (boundary 2019-01-03)"
+  record_date: '2019-01-03'
+  cutoff_date_ist: '2019-01-03'
+  ratio: 0.110635
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PIIND
+  event: "detected: ratio 9.0408 \u2192 8.5805 (boundary 2019-01-04)"
+  record_date: '2019-01-04'
+  cutoff_date_ist: '2019-01-04'
+  ratio: 1.053647
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PIIND
+  event: "detected: ratio 8.8384 \u2192 1.0042 (boundary 2019-01-08)"
+  record_date: '2019-01-08'
+  cutoff_date_ist: '2019-01-08'
+  ratio: 8.801217
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: POLICYBZR
+  event: "detected: ratio 1.0340 \u2192 0.9819 (boundary 2022-05-16)"
+  record_date: '2022-05-16'
+  cutoff_date_ist: '2022-05-16'
+  ratio: 1.053018
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: POWERGRID
+  event: "detected: ratio 1.0057 \u2192 0.9293 (boundary 2020-03-18)"
+  record_date: '2020-03-18'
+  cutoff_date_ist: '2020-03-18'
+  ratio: 1.08231
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: POWERGRID
+  event: "detected: ratio 0.9293 \u2192 0.9975 (boundary 2020-03-19)"
+  record_date: '2020-03-19'
+  cutoff_date_ist: '2020-03-19'
+  ratio: 0.931604
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PSUBNKBEES
+  event: "detected: ratio 1.0036 \u2192 1.0673 (boundary 2019-09-03)"
+  record_date: '2019-09-03'
+  cutoff_date_ist: '2019-09-03'
+  ratio: 0.940271
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PSUBNKBEES
+  event: "detected: ratio 1.0673 \u2192 1.0000 (boundary 2019-09-04)"
+  record_date: '2019-09-04'
+  cutoff_date_ist: '2019-09-04'
+  ratio: 1.067308
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PSUBNKBEES
+  event: "detected: ratio 1.0051 \u2192 0.9088 (boundary 2020-03-23)"
+  record_date: '2020-03-23'
+  cutoff_date_ist: '2020-03-23'
+  ratio: 1.105905
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: PSUBNKBEES
+  event: "detected: ratio 0.9088 \u2192 1.0000 (boundary 2020-03-24)"
+  record_date: '2020-03-24'
+  cutoff_date_ist: '2020-03-24'
+  ratio: 0.908815
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: SBILIFE
+  event: "detected: ratio 1.0385 \u2192 0.9821 (boundary 2020-03-23)"
+  record_date: '2020-03-23'
+  cutoff_date_ist: '2020-03-23'
+  ratio: 1.057401
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: SHREECEM
+  event: "detected: ratio 0.9903 \u2192 1.0595 (boundary 2020-03-18)"
+  record_date: '2020-03-18'
+  cutoff_date_ist: '2020-03-18'
+  ratio: 0.934695
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: SOLARINDS
+  event: "detected: ratio 0.9896 \u2192 1.0464 (boundary 2020-06-30)"
+  record_date: '2020-06-30'
+  cutoff_date_ist: '2020-06-30'
+  ratio: 0.945794
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: SOLARINDS
+  event: "detected: ratio 0.9925 \u2192 1.0499 (boundary 2021-09-17)"
+  record_date: '2021-09-17'
+  cutoff_date_ist: '2021-09-17'
+  ratio: 0.945351
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: SOLARINDS
+  event: "detected: ratio 1.0499 \u2192 0.9949 (boundary 2021-09-20)"
+  record_date: '2021-09-20'
+  cutoff_date_ist: '2021-09-20'
+  ratio: 1.055338
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: SOLARINDS
+  event: "detected: ratio 1.0082 \u2192 0.9587 (boundary 2024-07-03)"
+  record_date: '2024-07-03'
+  cutoff_date_ist: '2024-07-03'
+  ratio: 1.051535
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: SONACOMS
+  event: "detected: ratio 1.0325 \u2192 0.9767 (boundary 2021-07-22)"
+  record_date: '2021-07-22'
+  cutoff_date_ist: '2021-07-22'
+  ratio: 1.057124
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: SUPREMEIND
+  event: "detected: ratio 1.0001 \u2192 0.9431 (boundary 2020-11-27)"
+  record_date: '2020-11-27'
+  cutoff_date_ist: '2020-11-27'
+  ratio: 1.060379
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: SUPREMEIND
+  event: "detected: ratio 0.9431 \u2192 1.0036 (boundary 2020-12-01)"
+  record_date: '2020-12-01'
+  cutoff_date_ist: '2020-12-01'
+  ratio: 0.939724
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: TATACOMM
+  event: "detected: ratio 1.0084 \u2192 0.9523 (boundary 2019-11-27)"
+  record_date: '2019-11-27'
+  cutoff_date_ist: '2019-11-27'
+  ratio: 1.05889
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: TATACOMM
+  event: "detected: ratio 0.9523 \u2192 1.0049 (boundary 2019-11-28)"
+  record_date: '2019-11-28'
+  cutoff_date_ist: '2019-11-28'
+  ratio: 0.947705
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: TATACOMM
+  event: "detected: ratio 0.9565 \u2192 1.0142 (boundary 2020-03-18)"
+  record_date: '2020-03-18'
+  cutoff_date_ist: '2020-03-18'
+  ratio: 0.943149
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: TIINDIA
+  event: "detected: ratio 0.9564 \u2192 1.0079 (boundary 2021-04-29)"
+  record_date: '2021-04-29'
+  cutoff_date_ist: '2021-04-29'
+  ratio: 0.948906
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: TRENT
+  event: "detected: ratio 1.0052 \u2192 1.0637 (boundary 2020-10-14)"
+  record_date: '2020-10-14'
+  cutoff_date_ist: '2020-10-14'
+  ratio: 0.945026
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: TRENT
+  event: "detected: ratio 1.0637 \u2192 0.9833 (boundary 2020-10-15)"
+  record_date: '2020-10-15'
+  cutoff_date_ist: '2020-10-15'
+  ratio: 1.081707
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: TVSMOTOR
+  event: "detected: ratio 1.0519 \u2192 1.0006 (boundary 2020-03-24)"
+  record_date: '2020-03-24'
+  cutoff_date_ist: '2020-03-24'
+  ratio: 1.051285
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: TVSMOTOR
+  event: "detected: ratio 1.0096 \u2192 0.9506 (boundary 2020-04-07)"
+  record_date: '2020-04-07'
+  cutoff_date_ist: '2020-04-07'
+  ratio: 1.062087
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: TVSMOTOR
+  event: "detected: ratio 0.9506 \u2192 1.0014 (boundary 2020-04-08)"
+  record_date: '2020-04-08'
+  cutoff_date_ist: '2020-04-08'
+  ratio: 0.949236
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: VBL
+  event: "detected: ratio 1.0009 \u2192 0.9496 (boundary 2019-06-17)"
+  record_date: '2019-06-17'
+  cutoff_date_ist: '2019-06-17'
+  ratio: 1.05399
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.
+- symbol: YESBANK
+  event: "detected: ratio 1.0556 \u2192 0.9887 (boundary 2020-03-27)"
+  record_date: '2020-03-27'
+  cutoff_date_ist: '2020-03-27'
+  ratio: 1.067574
+  notes: Auto-detected from Kite-vs-prod ratio segmentation. Cross-check against NSE
+    corp-actions before applying.

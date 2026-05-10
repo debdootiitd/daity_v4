@@ -26,7 +26,8 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from rich.console import Console
 
 from daity.data.bq import BQClient
-from daity.data.datasets import OHLCVPretrainDataset
+from daity.data.datasets import DEFAULT_CHANNELS, OHLCVPretrainDataset
+from daity.data.feature_precompute import CHANNEL_ORDER_18
 from daity.data.parquet_store import ParquetStore
 from daity.data.symbols import SymbolMaster
 from daity.training.callbacks import (
@@ -177,7 +178,29 @@ def main(config_path: Path, smoke: bool, max_steps: int | None, d_model: int | N
     val_start = datetime.fromisoformat(str(merged["val_start"])).replace(tzinfo=UTC)
     val_end = datetime.fromisoformat(str(merged["val_end"])).replace(tzinfo=UTC)
 
-    store = ParquetStore(parquet_root)
+    # Feature parquet path (Phase 2.3 v3_features). When `feature_root` is
+    # set in the YAML, the dataset reads from data/features_parquet/ (18
+    # channels per `CHANNEL_ORDER_18`) instead of data/parquet/ (5 raw OHLCV).
+    # Channel count must match `cfg.num_channels` (the tokenizer's per-scale
+    # Linear is sized to it). Mismatches surface immediately at the first
+    # batch via shape errors.
+    feature_root_str = merged.get("feature_root")
+    if feature_root_str:
+        store = ParquetStore(Path(feature_root_str))
+        channels = CHANNEL_ORDER_18
+        if pretrain_cfg.num_channels != len(channels):
+            raise click.UsageError(
+                f"feature_root is set but num_channels={pretrain_cfg.num_channels} "
+                f"!= {len(channels)} (the precomputed feature channel count). "
+                f"Set num_channels={len(channels)} in the YAML."
+            )
+        console.print(
+            f"[bold]Feature mode:[/bold] reading from {feature_root_str} "
+            f"with {len(channels)}-channel input"
+        )
+    else:
+        store = ParquetStore(parquet_root)
+        channels = DEFAULT_CHANNELS
     window_bars = merged["window_bars"]
     # Forecast horizon in raw bars at the forecast scale: n_patches * patch_len
     # non-overlapping bars after end_ts. The dataset rejects samples that
@@ -187,13 +210,13 @@ def main(config_path: Path, smoke: bool, max_steps: int | None, d_model: int | N
     forecast_n_bars = forecast_n_patches * pretrain_cfg.patch_len
     train_ds = OHLCVPretrainDataset(
         store=store, symbols=universe, as_of=train_end,
-        window_bars=window_bars, seed=0,
+        window_bars=window_bars, channels=channels, seed=0,
         forecast_scale=forecast_scale if forecast_n_bars > 0 else None,
         forecast_n_bars=forecast_n_bars,
     )
     val_ds = OHLCVPretrainDataset(
         store=store, symbols=universe, as_of=val_end,
-        window_bars=window_bars, seed=1,
+        window_bars=window_bars, channels=channels, seed=1,
         forecast_scale=forecast_scale if forecast_n_bars > 0 else None,
         forecast_n_bars=forecast_n_bars,
         # DESIGN §2.5 — strict walk-forward val: end_ts must be >= val_start

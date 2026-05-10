@@ -324,6 +324,73 @@ def test_forecast_gradient_reaches_forecast_head() -> None:
     assert has_grad
 
 
+def test_cross_attention_forecast_head_trains_end_to_end() -> None:
+    """Phase 2.4 — the cross-attention forecast head plumbs cleanly through
+    `_compute_loss`. Same gate as the MLP-head overfit test (loss drops
+    ≥30% across 100 steps on a fixed batch).
+    """
+    torch.manual_seed(0)
+    cfg = _tiny_cfg(with_forecast=True)
+    cfg.forecast_head_type = "cross_attention"
+    cfg.lr = 5e-3
+    cfg.mask_ratio = 0.3
+    mod = PretrainModule(cfg)
+    # Sanity: the head's class is the cross-attn one.
+    from daity.models.heads import CrossAttentionForecastHead
+    assert isinstance(mod.forecast_head, CrossAttentionForecastHead)
+    batch = _batch(with_forecast=True)
+    opt = torch.optim.AdamW(mod.parameters(), lr=cfg.lr)
+
+    losses = []
+    for _ in range(100):
+        opt.zero_grad()
+        loss_full, parts = mod._compute_loss(batch)
+        loss_full.backward()
+        opt.step()
+        losses.append(parts["loss_forecast"].item())
+
+    early = sum(losses[:10]) / 10
+    late = sum(losses[-10:]) / 10
+    assert late < 0.7 * early, (
+        f"cross-attention forecast head didn't reduce loss: "
+        f"early={early:.4f} → late={late:.4f}"
+    )
+
+
+def test_forecast_num_channels_decoupling_18ch_input_5ch_output() -> None:
+    """Phase 2.4 — forecast head can output fewer channels than input has.
+    Use case: 18-channel feature_parquet input, but forecast head predicts
+    only the 5 bar_channels (OHLCV log-returns) to avoid heavy-tailed
+    derived-feature targets that spike MSE on outlier batches.
+    """
+    torch.manual_seed(0)
+    cfg = _tiny_cfg(with_forecast=True)
+    cfg.num_channels = 8                # pretend 8-channel input (5 OHLCV + 3 derived)
+    cfg.forecast_num_channels = 5       # head only predicts the bar_channels
+    mod = PretrainModule(cfg)
+
+    # Build a synthetic batch with 8 channels, future bars also 8 channels.
+    B = 4
+    batch = {
+        "5m":  torch.rand(B, 64, 8) * 10 + 100,
+        "day": torch.rand(B, 32, 8) * 10 + 100,
+        FORECAST_FUTURE_KEY: torch.rand(B, 32, 8) * 10 + 100,
+    }
+    loss, parts = mod._compute_loss(batch)
+    assert torch.isfinite(loss)
+    assert torch.isfinite(parts["loss_forecast"])
+    # Forecast head's output shape should be (B, H, 5, patch_len) regardless
+    # of num_channels=8 — stage that by inspecting the head directly.
+    assert mod.forecast_head.num_channels == 5
+
+
+def test_pretrain_config_rejects_unknown_forecast_head_type() -> None:
+    cfg = _tiny_cfg(with_forecast=True)
+    cfg.forecast_head_type = "magic"
+    with pytest.raises(ValueError, match="Unknown forecast_head_type"):
+        PretrainModule(cfg)
+
+
 def test_log_return_input_and_target_train_end_to_end() -> None:
     """Phase 2.3 — `input_form=log_returns` + `target_form=log_returns` paths.
 

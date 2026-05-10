@@ -195,3 +195,152 @@ class MultiHorizonForecastHead(nn.Module):
         B = forecast_hidden.size(0)
         flat = self.net(forecast_hidden)                 # (B, n_patches * C * patch_len)
         return flat.view(B, self.n_patches, self.num_channels, self.patch_len)
+
+
+class _CrossAttnBlock(nn.Module):
+    """Pre-norm cross-attention + FFN block. Q comes from learned forecast
+    queries; K, V come from the encoder hidden states.
+
+    Standard transformer-decoder block but without self-attention on Q
+    (the forecast queries don't attend to each other across positions —
+    each future-position prediction is independent of the others).
+
+    Adding self-attention on the queries would let predictions condition
+    on each other (autoregressive-ish coupling); the published Time-FM
+    forecast heads (PatchTST-2024, MOIRAI, TimesFM) split on this — some
+    do, some don't. We default to NO self-attention for simplicity; can
+    be added as a flag if multi-position coherence becomes a concern.
+    """
+
+    def __init__(self, d_model: int, n_heads: int, ffn_ratio: int) -> None:
+        super().__init__()
+        self.norm_q = nn.LayerNorm(d_model)
+        self.norm_kv = nn.LayerNorm(d_model)
+        self.cross_attn = nn.MultiheadAttention(
+            d_model, n_heads, batch_first=True, dropout=0.0,
+        )
+        self.norm2 = nn.LayerNorm(d_model)
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, ffn_ratio * d_model),
+            nn.GELU(),
+            nn.Linear(ffn_ratio * d_model, d_model),
+        )
+
+    def forward(self, q: torch.Tensor, kv: torch.Tensor) -> torch.Tensor:
+        """q: (B, H, d_model); kv: (B, T, d_model). Returns (B, H, d_model)."""
+        # Cross-attention: q queries the encoder hidden states.
+        q_n = self.norm_q(q)
+        kv_n = self.norm_kv(kv)
+        attn_out, _ = self.cross_attn(q_n, kv_n, kv_n, need_weights=False)
+        q = q + attn_out
+        # FFN on the queries.
+        q = q + self.ffn(self.norm2(q))
+        return q
+
+
+class CrossAttentionForecastHead(nn.Module):
+    """Multi-horizon forecast head — cross-attention over encoder output.
+
+    This is the architect-recommended replacement for `MultiHorizonForecastHead`:
+    instead of compressing every relevant signal through a single
+    `(B, d_model)` FORECAST-token bottleneck (480 dims for d_model=480),
+    H learnable forecast-position queries cross-attend over the FULL
+    encoder output (`(B, T, d_model)` = 81 patch tokens × 480 dims =
+    ~39K conditioning dims per sample). This is the canonical Time-FM
+    forecast-head architecture (PatchTST 2024, MOIRAI-Base, Chronos,
+    TimesFM all use cross-attention).
+
+    Shape contract:
+      Input: encoder_hidden (B, T, d_model) — the patch-token hidden
+        states from the non-causal backbone pass. Caller passes
+        `hidden_nc[:, 1:]` to skip the FORECAST token (it's redundant
+        as a key/value since the cross-attn head is its replacement).
+      Output: (B, n_patches, num_channels, patch_len) — same as the
+        MLP head; downstream loss code is unchanged.
+
+    Head capacity at d_model=480, n_layers=2, n_heads=8, ffn_ratio=2,
+    n_patches=6, num_channels=18, patch_len=16:
+      - 6 learned queries × 480 dims = 2.9K params
+      - Per block: 4 × 480² (MHA) + 2 × 2 × 480² (FFN) + 3 × 2 × 480 (LN)
+        ≈ 1.85M
+      - 2 blocks ≈ 3.7M
+      - Final norm + projection: 480 → 18 × 16 = 288 → 138K
+      - Total ≈ 3.85M (vs MLP head's ~2.0M at the same shape)
+
+    Roughly 2× the parameter count of the MLP head, well worth it for
+    the structural improvement: the bottleneck is removed, and each
+    forecast-position query independently selects relevant encoder states.
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        n_patches: int,
+        num_channels: int,
+        patch_len: int,
+        *,
+        n_layers: int = 2,
+        n_heads: int = 8,
+        ffn_ratio: int = 2,
+        query_init_std: float = 0.02,
+    ) -> None:
+        super().__init__()
+        if n_patches <= 0:
+            msg = f"n_patches must be positive, got {n_patches}"
+            raise ValueError(msg)
+        if num_channels <= 0 or patch_len <= 0:
+            msg = (
+                f"num_channels and patch_len must be positive "
+                f"({num_channels}, {patch_len})"
+            )
+            raise ValueError(msg)
+        if d_model % n_heads != 0:
+            msg = (
+                f"d_model ({d_model}) must be divisible by n_heads ({n_heads}) "
+                f"for CrossAttentionForecastHead"
+            )
+            raise ValueError(msg)
+        self.n_patches = n_patches
+        self.num_channels = num_channels
+        self.patch_len = patch_len
+        # Learnable forecast-position queries — one per future patch.
+        # Each query carries its own representation of "what does
+        # 'patch k future-steps ahead' look like" and is updated by
+        # cross-attention to the encoder hidden states.
+        self.queries = nn.Parameter(
+            torch.randn(n_patches, d_model) * query_init_std,
+        )
+        self.blocks = nn.ModuleList([
+            _CrossAttnBlock(d_model, n_heads, ffn_ratio)
+            for _ in range(n_layers)
+        ])
+        self.final_norm = nn.LayerNorm(d_model)
+        self.proj = nn.Linear(d_model, num_channels * patch_len)
+
+    def forward(self, encoder_hidden: torch.Tensor) -> torch.Tensor:
+        """`(B, T, d_model)` → `(B, n_patches, num_channels, patch_len)`.
+
+        Args:
+          encoder_hidden: typically `hidden_nc[:, 1:]` — the patch-token
+            slice of the non-causal backbone output. Including the
+            FORECAST token in the keys/values is harmless but redundant.
+
+        Returns:
+          (B, n_patches, num_channels, patch_len) — same shape as the
+          MLP head's output, no downstream loss-code changes needed.
+        """
+        if encoder_hidden.dim() != 3:
+            msg = (
+                f"Expected (B, T, d_model), got shape {tuple(encoder_hidden.shape)}"
+            )
+            raise ValueError(msg)
+        B = encoder_hidden.size(0)
+        # Broadcast queries across batch.
+        q = self.queries.unsqueeze(0).expand(B, -1, -1).contiguous()  # (B, H, d_model)
+        # Stack of cross-attn + FFN blocks.
+        for block in self.blocks:
+            q = block(q, encoder_hidden)
+        q = self.final_norm(q)
+        # Project each query position to its patch values.
+        out = self.proj(q)                                             # (B, H, C * patch_len)
+        return out.view(B, self.n_patches, self.num_channels, self.patch_len)
