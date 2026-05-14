@@ -1,0 +1,9 @@
+- [Curriculum training for TradeableHead](feedback_curriculum_training.md) — Stage 1 long-history pretrain → Stage 2 OB fine-tune; never go straight to the narrow OB window
+- [Maximize GPU utilization](preference_gpu_utilization.md) — always keep GPU busy; auto-queue parallel sweeps when memory has headroom; don't wait for explicit user approval to start the next iteration
+- [Sweep v1 auto-loop pipeline](reference_sweep_v1_pipeline.md) — Phase 5 sweep system layout; where insights.md lives; how trading-analyst agent should consume it each iteration
+- [Long-only strategies](feedback_long_only.md) — Never propose short-only or both-side configs; backtest_side must always be long_only
+- [Sweep v1 strategy-phase closeout](project_sweep_v1_phase_summary.md) — Strategy lever map (A2 best retail = -0.68%, gap = 0.68pp). What worked / didn't.
+- [Score calibration root cause](feedback_score_calibration_root_cause.md) — Encoder is rank-trained not confidence-trained; top-1 scores all in [0.20, 0.25]. Strategy ceiling.
+- [Encoder training priorities](project_encoder_training_priorities.md) — Pivot 2026-05-14: focus on PU_RECOVERY_2v2 / PU5v2 / PU6v2 / unfreeze variants. Drop K1-family + F1m strategy experiments.
+- [Strategy backlog retry on new encoder](reference_strategy_backlog_retry_on_new_encoder.md) — Proven recipes to apply to each new ckpt; backtest_long_score_threshold ~0.23 + Curve F is the champion
+- [PU7 trajectory baselines](project_pu7_trajectory_baselines.md) — A2/PU6v4/PU_RECOVERY_2v4 L@10 curves to compare PU7 against at each eval point

@@ -1,0 +1,63 @@
+# Phase 4 OB ingest + features config.
+#
+# Source: BigQuery `order_book_depth` table, wide L2 (top-5 levels per side).
+# Schema: (symbol, date, ts, ltp, volume, total_buy_qty, total_sell_qty,
+#          bid1..bid5_price/qty, ask1..ask5_price/qty, spread_bps, fetched_at).
+# Snapshot cadence: 60s. Coverage: 2026-03-08 → 2026-05-04, ~6.5K symbol-days,
+# 98.9% fill.
+
+ingest:
+  bq_table: order_book_depth
+  partition_by: date
+  cluster_by: [symbol, ts]
+  output_root: data/ob_parquet
+  # Per-symbol parquet layout matching `parquet_store.py` conventions:
+  # data/ob_parquet/{symbol}/year={yyyy}/month={mm}.parquet
+  partition_layout: per_symbol_yearmonth
+
+features:
+  # Number of L2 levels to use. Source has 5 per side.
+  n_levels: 5
+  # Snapshots-per-anchor lookback window (60s × 64 = ~64-min OB context).
+  k_snapshots: 64
+  # Staleness threshold: if last snapshot is older than this many minutes
+  # before the anchor, treat OB as absent (gate→0).
+  max_staleness_minutes: 5
+  # Engineered channels per snapshot (DESIGN §3.4 list).
+  channels:
+    - microprice
+    - weighted_mid
+    - ofi_l1_60s
+    - ofi_l5_60s
+    - book_pressure_l1
+    - book_pressure_l3
+    - book_pressure_l5
+    - queue_imbalance_l1
+    - spread_bps
+    - spread_bps_vs_5min_mean
+    - depth_within_1bp
+    - depth_within_5bp
+    - depth_within_10bp
+    - log_volume
+    - signed_volume_proxy
+
+encoder:
+  d_model: 192
+  n_layers: 4
+  n_heads: 4
+  ffn_ratio: 4
+  dropout: 0.1
+
+fusion:
+  # Backbone layers to inject OB cross-attention into (upper layers).
+  inject_at_layers: [10, 11]   # 0-indexed; backbone has 12 layers
+  fusion_dropout: 0.3
+  # Curriculum: number of opt steps with gate forced to zero before unfreezing.
+  gate_zero_steps: 1500
+
+# Phase 4 acceptance gate (DESIGN §3.4 + amendment 19 pending).
+acceptance:
+  primary_horizon: 30m
+  required_delta_with_minus_without_ob: 0.005  # mean across OB folds
+  required_t_stat: 1.5                          # cross-fold t-stat
+  no_regress_tolerance_vs_baseline: -0.001     # without-OB ≥ baseline - 0.001
