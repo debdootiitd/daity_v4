@@ -228,3 +228,50 @@ class WalkForwardSplitter:
         except ValueError as exc:
             log.warning("Discarding malformed split at test_end=%s: %s", test_end, exc)
             return None
+
+
+# ---- Phase 4 OB-window walk-forward (DESIGN amendment 19 — pending) ----
+#
+# OB sample spans 2026-03-08 → 2026-05-04 (~40 trading days). Phase 4
+# acceptance gate operates on its own walk-forward windows (NOT Phase 3's
+# F-9..F-12) because Phase 3 folds pre-date the OB window. Four mini-folds
+# with expanding-window training give us cross-fold t-stat statistical
+# power even at small per-fold sample size.
+#
+# Fold layout: train_start fixed at OB-window start, train_end grows by 5
+# trading days per fold, val is the next 5 trading days. Embargo = 0 (the
+# horizon is 30m intraday, no carry-over).
+
+@dataclass(frozen=True, slots=True)
+class OBFold:
+    """Phase 4 OB fine-tune fold spec. Simpler than `Split` — train + val,
+    no test (val IS the held-out evaluation per Phase 4 §1)."""
+    name: str
+    train_start: date
+    train_end: date
+    val_start: date
+    val_end: date
+
+
+OB_WALK_FORWARD_FOLDS: tuple[OBFold, ...] = (
+    OBFold(
+        name="OB-F1",
+        train_start=date(2026, 3, 9),  train_end=date(2026, 4, 2),
+        val_start=date(2026, 4, 6),    val_end=date(2026, 4, 10),
+    ),
+    OBFold(
+        name="OB-F2",
+        train_start=date(2026, 3, 9),  train_end=date(2026, 4, 10),
+        val_start=date(2026, 4, 13),   val_end=date(2026, 4, 17),
+    ),
+    OBFold(
+        name="OB-F3",
+        train_start=date(2026, 3, 9),  train_end=date(2026, 4, 17),
+        val_start=date(2026, 4, 20),   val_end=date(2026, 4, 24),
+    ),
+    OBFold(
+        name="OB-F4",
+        train_start=date(2026, 3, 9),  train_end=date(2026, 4, 24),
+        val_start=date(2026, 4, 27),   val_end=date(2026, 5, 1),
+    ),
+)

@@ -32,7 +32,12 @@ sa-key.json
 /mlruns/
 reports/*.html
 reports/*.json
+reports/*.pt
+reports/**/*.pt
 !reports/.gitkeep
+
+# Local agent / IDE state
+.claude/
 
 # --- Python ---
 __pycache__/
