@@ -1,4 +1,4 @@
-# daity_v3
+# daity_v4
 
 Foundation-model algo trading system for NSE equities. Pretrains a multi-resolution
 patch transformer on OHLCV bars, post-trains supervised quantile / ranking heads with
