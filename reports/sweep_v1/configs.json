@@ -1,0 +1,3087 @@
+[
+  {
+    "id": "PU8_Accum4_VarReduction",
+    "_note": "Variance-reduction test: PU7_BalancedLR + grad-accum=4. PG loss is variance-dominated; 1 CS per step is pathological. 5000 opt steps \u00d7 4 accum = 20k forward passes (33% more than PU7). Tests whether the bandit signal is buried in noise.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 5e-05,
+    "train_max_steps": 5000,
+    "train_warmup_steps_pct": 0.05,
+    "train_lr_min_ratio": 0.05,
+    "train_lr_ratio_lora": 0.5,
+    "train_lr_ratio_backbone": 0.3,
+    "train_weight_decay": 0.01,
+    "train_gradient_clip_val": 1.0,
+    "train_gradient_accumulation_steps": 4,
+    "train_ob_unfreeze": "all",
+    "train_eval_every_n_steps": 500,
+    "head_dropout": 0.2,
+    "rank_loss_weight_long": 0.5,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.2,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 50.0,
+    "direct_pnl_temperature": 1.5,
+    "direct_pnl_top_k": 10,
+    "direct_pnl_entropy_coef": 0.01,
+    "direct_pnl_uniform_mix": 0.0,
+    "direct_pnl_baseline_subtract": true,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_threshold": 0.23
+  },
+  {
+    "id": "PU9_HighEntropy_AntiCollapse",
+    "_note": "Anti-collapse test: PU7_BalancedLR + entropy_coef 0.01\u21920.05 + uniform_mix 0\u21920.10. Encoder's top-1 scores collapse to [0.20, 0.25] band. Higher entropy + 10% uniform mix should force wider score distribution. If L@10 holds and backtest at T=0.23 trades MORE, score calibration improved.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 5e-05,
+    "train_max_steps": 15000,
+    "train_warmup_steps_pct": 0.05,
+    "train_lr_min_ratio": 0.05,
+    "train_lr_ratio_lora": 0.5,
+    "train_lr_ratio_backbone": 0.3,
+    "train_weight_decay": 0.01,
+    "train_gradient_clip_val": 1.0,
+    "train_ob_unfreeze": "all",
+    "head_dropout": 0.2,
+    "rank_loss_weight_long": 0.5,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.2,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 50.0,
+    "direct_pnl_temperature": 1.5,
+    "direct_pnl_top_k": 10,
+    "direct_pnl_entropy_coef": 0.05,
+    "direct_pnl_uniform_mix": 0.1,
+    "direct_pnl_baseline_subtract": true,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_threshold": 0.23
+  },
+  {
+    "id": "PU11_NoLRRatio_extended_50k",
+    "_note": "PU10 broke 0.167 at step 9000 \u2014 best PU* ever, beats PU6v4 (0.158). Extending to 50k steps to see if it keeps climbing toward A2's 0.181 ceiling or saturates. Same flat LR (no ratios) is the winning recipe.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 2e-05,
+    "train_max_steps": 50000,
+    "train_warmup_steps_pct": 0.02,
+    "train_lr_min_ratio": 0.05,
+    "train_lr_ratio_lora": 1.0,
+    "train_lr_ratio_backbone": 1.0,
+    "train_weight_decay": 0.01,
+    "train_gradient_clip_val": 1.0,
+    "train_ob_unfreeze": "all",
+    "train_eval_every_n_steps": 2000,
+    "head_dropout": 0.2,
+    "rank_loss_weight_long": 0.5,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.2,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 50.0,
+    "direct_pnl_temperature": 1.5,
+    "direct_pnl_top_k": 10,
+    "direct_pnl_entropy_coef": 0.01,
+    "direct_pnl_uniform_mix": 0.0,
+    "direct_pnl_baseline_subtract": true,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_threshold": 0.23
+  },
+  {
+    "id": "PU12_NoLRRatio_highLR",
+    "_note": "PU10 won with flat LR but at lr=2e-5 (conservative). Test whether lr=5e-5 (PU7's level, but WITHOUT LR ratios) extracts even more. Adam normalization should handle the head's high grad without blow-up.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 5e-05,
+    "train_max_steps": 15000,
+    "train_warmup_steps_pct": 0.05,
+    "train_lr_min_ratio": 0.05,
+    "train_lr_ratio_lora": 1.0,
+    "train_lr_ratio_backbone": 1.0,
+    "train_weight_decay": 0.01,
+    "train_gradient_clip_val": 1.0,
+    "train_ob_unfreeze": "all",
+    "train_eval_every_n_steps": 1000,
+    "head_dropout": 0.2,
+    "rank_loss_weight_long": 0.5,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.2,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 50.0,
+    "direct_pnl_temperature": 1.5,
+    "direct_pnl_top_k": 10,
+    "direct_pnl_entropy_coef": 0.01,
+    "direct_pnl_uniform_mix": 0.0,
+    "direct_pnl_baseline_subtract": true,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_threshold": 0.23
+  },
+  {
+    "id": "PU10_NoLRRatio_baseline",
+    "_note": "Counter-architect test: same as PU7_BalancedLR but lr_ratio_lora=1.0 and lr_ratio_backbone=1.0 \u2014 flat LR across all groups, global lr=2e-5 to stay safe vs pretrain. Adam 2nd-moment normalization already auto-scales per param; the 1:0.5:0.3 ratios may be hurting backbone learning. If PU10 beats PU7, LR-ratio hand-tuning is the bottleneck.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 2e-05,
+    "train_max_steps": 15000,
+    "train_warmup_steps_pct": 0.05,
+    "train_lr_min_ratio": 0.05,
+    "train_lr_ratio_lora": 1.0,
+    "train_lr_ratio_backbone": 1.0,
+    "train_weight_decay": 0.01,
+    "train_gradient_clip_val": 1.0,
+    "train_ob_unfreeze": "all",
+    "head_dropout": 0.2,
+    "rank_loss_weight_long": 0.5,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.2,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 50.0,
+    "direct_pnl_temperature": 1.5,
+    "direct_pnl_top_k": 10,
+    "direct_pnl_entropy_coef": 0.01,
+    "direct_pnl_uniform_mix": 0.0,
+    "direct_pnl_baseline_subtract": true,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_threshold": 0.23
+  },
+  {
+    "id": "A1_tgt05_stp03_h60_close",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 0,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60
+  },
+  {
+    "id": "A2_tgt05_stp03_h60_slip5",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60
+  },
+  {
+    "id": "B1_tgt075_stp04_h60_close",
+    "label_tgt_pct": 0.0075,
+    "label_stop_pct": 0.004,
+    "label_entry_offset_min": 0,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.0075,
+    "backtest_stop_pct": 0.004,
+    "backtest_h_max_min": 60
+  },
+  {
+    "id": "C1_tgt10_stp05_h120_close",
+    "label_tgt_pct": 0.01,
+    "label_stop_pct": 0.005,
+    "label_entry_offset_min": 0,
+    "label_h_max_min": 120,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.01,
+    "backtest_stop_pct": 0.005,
+    "backtest_h_max_min": 120
+  },
+  {
+    "id": "C2_tgt10_stp05_h120_slip5",
+    "label_tgt_pct": 0.01,
+    "label_stop_pct": 0.005,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 120,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.01,
+    "backtest_stop_pct": 0.005,
+    "backtest_h_max_min": 120
+  },
+  {
+    "id": "D1_tgt15_stp05_h120_close",
+    "label_tgt_pct": 0.015,
+    "label_stop_pct": 0.005,
+    "label_entry_offset_min": 0,
+    "label_h_max_min": 120,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.015,
+    "backtest_stop_pct": 0.005,
+    "backtest_h_max_min": 120
+  },
+  {
+    "id": "E1_wideRR_tgt08_stp03_h90",
+    "label_tgt_pct": 0.008,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 90,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.008,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 90
+  },
+  {
+    "id": "PU1_unfreezeLast1_lr5e5_pnl200",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 5e-05,
+    "train_max_steps": 18000,
+    "train_unfreeze": "encoder_only",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 200.0,
+    "direct_pnl_temperature": 1.0,
+    "direct_pnl_top_k": 10,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU2_unfreezeLast2_lr3e5_pnl200",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 3e-05,
+    "train_max_steps": 18000,
+    "train_unfreeze": "encoder_only",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 200.0,
+    "direct_pnl_temperature": 1.0,
+    "direct_pnl_top_k": 10,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU3_lora_lr1e4_pnl200",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 14000,
+    "train_unfreeze": "lora",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 200.0,
+    "direct_pnl_temperature": 1.0,
+    "direct_pnl_top_k": 10,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU4_unfreezeLast2_pnl500_T05_k5",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 3e-05,
+    "train_max_steps": 18000,
+    "train_unfreeze": "encoder_only",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 500.0,
+    "direct_pnl_temperature": 0.5,
+    "direct_pnl_top_k": 5,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU5_unfreezeLast2_pnl100_T07_k20",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 3e-05,
+    "train_max_steps": 18000,
+    "train_unfreeze": "encoder_only",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 100.0,
+    "direct_pnl_temperature": 0.7,
+    "direct_pnl_top_k": 20,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU6_unfreezeAll_lr1e5_pnl200",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 1e-05,
+    "train_max_steps": 20000,
+    "train_unfreeze": "all",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 200.0,
+    "direct_pnl_temperature": 1.0,
+    "direct_pnl_top_k": 10,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "M1_scoreRerank_K3_on_A2labels",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3
+  },
+  {
+    "id": "M2_hybridRerank_K3_on_A2labels",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "hybrid_rerank",
+    "backtest_score_rerank_k": 3
+  },
+  {
+    "id": "M3_scoreFloor_at0_on_A2labels",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_floor",
+    "backtest_score_floor": 0.0
+  },
+  {
+    "id": "M4_scoreRerank_K1_aggressive",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 1
+  },
+  {
+    "id": "M5_scoreRerank_K2_on_A2labels",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 2
+  },
+  {
+    "id": "M6_scoreRerank_K4_on_A2labels",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 4
+  },
+  {
+    "id": "M7_scoreRerank_K5_on_A2labels",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 5
+  },
+  {
+    "id": "K1_tightTgt_retailLabelCost",
+    "label_tgt_pct": 0.003,
+    "label_stop_pct": 0.002,
+    "label_entry_offset_min": 0,
+    "label_h_max_min": 30,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.003,
+    "backtest_stop_pct": 0.002,
+    "backtest_h_max_min": 30,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 1.0,
+    "focal_aux_weight": 0.3,
+    "cls_aux_weight": 0.1,
+    "direct_pnl_loss_weight": 0.0
+  },
+  {
+    "id": "S1_stabilize_wideRR_lowLR_clip",
+    "label_tgt_pct": 0.0075,
+    "label_stop_pct": 0.004,
+    "label_entry_offset_min": 0,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 3e-05,
+    "train_max_steps": 18000,
+    "backtest_target_pct": 0.0075,
+    "backtest_stop_pct": 0.004,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.5,
+    "cls_aux_weight": 0.3,
+    "direct_pnl_loss_weight": 25.0,
+    "direct_pnl_temperature": 1.5,
+    "direct_pnl_top_k": 10,
+    "rank_target_temperature_long": 0.03
+  },
+  {
+    "id": "S5_trainWide_deployTight_stable",
+    "label_tgt_pct": 0.0075,
+    "label_stop_pct": 0.0035,
+    "label_entry_offset_min": 0,
+    "label_h_max_min": 90,
+    "label_cost_bps": 19,
+    "train_lr": 3e-05,
+    "train_max_steps": 18000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.5,
+    "cls_aux_weight": 0.25,
+    "direct_pnl_loss_weight": 30.0,
+    "direct_pnl_temperature": 1.2,
+    "direct_pnl_top_k": 10,
+    "rank_target_temperature_long": 0.025
+  },
+  {
+    "id": "K1m_tightTgt_M1_rerank3",
+    "label_tgt_pct": 0.003,
+    "label_stop_pct": 0.002,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_target_pct": 0.003,
+    "backtest_stop_pct": 0.002,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3
+  },
+  {
+    "id": "F1m_wideTgt_M1_rerank3_stable",
+    "label_tgt_pct": 0.0075,
+    "label_stop_pct": 0.004,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 180,
+    "label_cost_bps": 19,
+    "train_lr": 7e-05,
+    "train_max_steps": 16000,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "direct_pnl_loss_weight": 50.0,
+    "cls_aux_weight": 0.2,
+    "backtest_target_pct": 0.0075,
+    "backtest_stop_pct": 0.004,
+    "backtest_h_max_min": 180,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3
+  },
+  {
+    "id": "K5m_NIFTY50_M1_rerank3_top3",
+    "label_tgt_pct": 0.004,
+    "label_stop_pct": 0.0025,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 12,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_target_pct": 0.004,
+    "backtest_stop_pct": 0.0025,
+    "backtest_h_max_min": 60,
+    "backtest_max_symbols": 50,
+    "backtest_position_size_pct": 0.033,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3
+  },
+  {
+    "id": "K1_CurveF",
+    "label_tgt_pct": 0.003,
+    "label_stop_pct": 0.0018,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.003,
+    "backtest_stop_pct": 0.0018,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "K1_CurveG_sharper",
+    "label_tgt_pct": 0.003,
+    "label_stop_pct": 0.0018,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.003,
+    "backtest_stop_pct": 0.0018,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        1
+      ],
+      [
+        -0.001,
+        3
+      ],
+      [
+        0.001,
+        10
+      ],
+      [
+        0.003,
+        10
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ],
+      [
+        0.015,
+        1
+      ]
+    ]
+  },
+  {
+    "id": "K1_CurveF_entryGated_T05",
+    "label_tgt_pct": 0.003,
+    "label_stop_pct": 0.0018,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "rank_target_temperature_long": 0.015,
+    "backtest_target_pct": 0.003,
+    "backtest_stop_pct": 0.0018,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 2,
+    "backtest_long_score_threshold": 0.05,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "K1_CurveF_scaled",
+    "label_tgt_pct": 0.003,
+    "label_stop_pct": 0.002,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "train_unfreeze": "none",
+    "backtest_target_pct": 0.003,
+    "backtest_stop_pct": 0.002,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.3,
+    "cls_aux_weight": 0.1,
+    "direct_pnl_loss_weight": 0.0,
+    "rank_target_temperature_long": 0.02,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.006,
+        1
+      ],
+      [
+        -0.003,
+        1
+      ],
+      [
+        -0.0018,
+        2
+      ],
+      [
+        -0.0006,
+        5
+      ],
+      [
+        0.0006,
+        8
+      ],
+      [
+        0.003,
+        5
+      ],
+      [
+        0.006,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "K1_CurveF_unfreeze_last2",
+    "label_tgt_pct": 0.003,
+    "label_stop_pct": 0.0018,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 5e-05,
+    "train_max_steps": 18000,
+    "train_unfreeze": "encoder_only",
+    "backtest_target_pct": 0.003,
+    "backtest_stop_pct": 0.0018,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "U1_lora_A2_baseline",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 5e-05,
+    "train_max_steps": 14000,
+    "train_unfreeze": "lora",
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0
+  },
+  {
+    "id": "PU_RECOVERY_1_rank_anchor",
+    "_note": "Fix 2: re-add small ListNet anchor + lower direct_pnl_weight. Pure config change, tests if anchor restores ranking.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 3e-05,
+    "train_max_steps": 18000,
+    "train_unfreeze": "encoder_only",
+    "rank_loss_weight_long": 0.2,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 50.0,
+    "direct_pnl_temperature": 1.0,
+    "direct_pnl_top_k": 10,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU_RECOVERY_2_fullsoftmax_entropy",
+    "_note": "Fix 1: removes the top-K dead-zone via new direct_pnl_loss code (full softmax, reward-masked). Adds entropy regularizer + uniform mix.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 3e-05,
+    "train_max_steps": 18000,
+    "train_unfreeze": "encoder_only",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 50.0,
+    "direct_pnl_temperature": 2.0,
+    "direct_pnl_top_k": 10,
+    "direct_pnl_entropy_coef": 0.02,
+    "direct_pnl_uniform_mix": 0.1,
+    "direct_pnl_baseline_subtract": true,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU_RECOVERY_3_belt_and_braces",
+    "_note": "Production candidate: LoRA-only unfreeze (smallest surface) + rank anchor + entropy + uniform mix + larger top-K + higher T. Combines all known stabilizers.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 1e-05,
+    "train_max_steps": 12000,
+    "train_unfreeze": "lora",
+    "rank_loss_weight_long": 0.3,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 30.0,
+    "direct_pnl_temperature": 1.5,
+    "direct_pnl_top_k": 30,
+    "direct_pnl_entropy_coef": 0.01,
+    "direct_pnl_uniform_mix": 0.05,
+    "direct_pnl_baseline_subtract": true,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU5v2_unfreezeLast2_pnl100_T07_k20",
+    "_note": "PU5 retry with new 180min timeout. Best partial-trained result: -1.93% inst. Full training may improve.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 3e-05,
+    "train_max_steps": 18000,
+    "train_unfreeze": "encoder_only",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 100.0,
+    "direct_pnl_temperature": 0.7,
+    "direct_pnl_top_k": 20,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "B1_bighead_noWarmstart",
+    "_note": "Lever #1+#2: 4-layer 8-head 1024-d_ff head (3.5x params) + NO warmstart (fresh basin). Tests if head capacity caps L@10.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0003,
+    "train_max_steps": 14000,
+    "train_unfreeze": "none",
+    "head_arch": "xsattn",
+    "head_n_layers": 4,
+    "head_n_heads": 8,
+    "head_d_ff": 1024,
+    "head_dropout": 0.15,
+    "head_warmstart": null,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.3,
+    "cls_aux_weight": 0.1,
+    "direct_pnl_loss_weight": 0.0,
+    "rank_target_temperature_long": 0.02,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "B2_OBunfreeze_lora",
+    "_note": "Lever #7: OB encoder unfreeze (LoRA). OB features may BE the ceiling. A2 head recipe verbatim except ob_unfreeze=lora.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0002,
+    "train_max_steps": 12000,
+    "train_unfreeze": "none",
+    "train_ob_unfreeze": "fusion",
+    "head_arch": "xsattn",
+    "head_n_layers": 2,
+    "head_n_heads": 4,
+    "head_d_ff": 512,
+    "head_dropout": 0.1,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.3,
+    "cls_aux_weight": 0.1,
+    "rank_target_temperature_long": 0.02,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "B3_altparent_F2",
+    "_note": "Lever #3: different parent checkpoint (F-13 -> F2). Tests if 0.18 ceiling is set by parent feature manifold.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0002,
+    "train_max_steps": 12000,
+    "train_unfreeze": "none",
+    "parent_checkpoint": "reports/phase4_f13_finetune_OB-F2.state.pt",
+    "head_warmstart": null,
+    "head_arch": "xsattn",
+    "head_n_layers": 2,
+    "head_n_heads": 4,
+    "head_d_ff": 512,
+    "head_dropout": 0.1,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.3,
+    "cls_aux_weight": 0.1,
+    "rank_target_temperature_long": 0.02,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "B4_bighead_OBlora_combo",
+    "_note": "Stack B1+B2: big head + OB LoRA unfreeze + no head warmstart. If they compound, this is the breakthrough.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.00025,
+    "train_max_steps": 14000,
+    "train_unfreeze": "none",
+    "train_ob_unfreeze": "fusion",
+    "head_arch": "xsattn",
+    "head_n_layers": 3,
+    "head_n_heads": 8,
+    "head_d_ff": 1024,
+    "head_dropout": 0.15,
+    "head_warmstart": null,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.3,
+    "cls_aux_weight": 0.1,
+    "direct_pnl_loss_weight": 0.0,
+    "rank_target_temperature_long": 0.02,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU_RECOVERY_2v2_fullsoftmax_entropy",
+    "_note": "Retry PU_RECOVERY_2 with new timeout. Full structural fix + entropy + uniform_mix + baseline_subtract.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 3e-05,
+    "train_max_steps": 18000,
+    "train_unfreeze": "encoder_only",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 50.0,
+    "direct_pnl_temperature": 2.0,
+    "direct_pnl_top_k": 10,
+    "direct_pnl_entropy_coef": 0.02,
+    "direct_pnl_uniform_mix": 0.1,
+    "direct_pnl_baseline_subtract": true,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU6v2_unfreezeAll_lr1e5_pnl200",
+    "_note": "Retry PU6 (unfreeze=all + pure-PnL) under new 180min timeout. Partial training at step 4000 showed L@10=0.1526 \u2014 best of PU family. Full training to 20000 steps may unlock.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 1e-05,
+    "train_max_steps": 20000,
+    "train_unfreeze": "all",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 200.0,
+    "direct_pnl_temperature": 1.0,
+    "direct_pnl_top_k": 10,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "W1_wideCurveF_retail",
+    "label_tgt_pct": 0.008,
+    "label_stop_pct": 0.005,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 90,
+    "label_cost_bps": 19,
+    "train_lr": 5e-05,
+    "train_max_steps": 16000,
+    "train_unfreeze": "none",
+    "backtest_target_pct": 0.008,
+    "backtest_stop_pct": 0.005,
+    "backtest_h_max_min": 90,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.5,
+    "cls_aux_weight": 0.3,
+    "direct_pnl_loss_weight": 0.0,
+    "rank_target_temperature_long": 0.02,
+    "backtest_slippage_bps_override": 9.5,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.016,
+        1
+      ],
+      [
+        -0.008,
+        1
+      ],
+      [
+        -0.0048,
+        2
+      ],
+      [
+        -0.0016,
+        5
+      ],
+      [
+        0.0016,
+        8
+      ],
+      [
+        0.008,
+        5
+      ],
+      [
+        0.016,
+        3
+      ]
+    ],
+    "backtest_long_score_threshold": 0.03
+  },
+  {
+    "id": "K5m_sized_NIFTY50_pctrank",
+    "_note": "P4: K5m + conviction sizing 10-25%. Full pipeline (mining same labels + train new ckpt + backtest on NIFTY-50 with 6bps slip).",
+    "label_tgt_pct": 0.004,
+    "label_stop_pct": 0.0025,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_target_pct": 0.004,
+    "backtest_stop_pct": 0.0025,
+    "backtest_h_max_min": 60,
+    "backtest_max_symbols": 50,
+    "backtest_position_size_mode": "score_pct_rank",
+    "backtest_position_size_min_pct": 0.1,
+    "backtest_position_size_max_pct": 0.25,
+    "backtest_slippage_bps_override": 6,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_pct_gate": 0.05
+  },
+  {
+    "id": "PU6v3_unfreezeAll_50k",
+    "_note": "Extended training: PU6 recipe (full encoder unfreeze + pure-PnL) to 50000 steps for proper convergence.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 1e-05,
+    "train_max_steps": 50000,
+    "train_unfreeze": "all",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 200.0,
+    "direct_pnl_temperature": 1.0,
+    "direct_pnl_top_k": 10,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU_RECOVERY_2v3_fullsoftmax_entropy_50k",
+    "_note": "Extended training: PU_RECOVERY_2 recipe (pure-PnL + full regularizers + encoder_only unfreeze) to 50000 steps.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 3e-05,
+    "train_max_steps": 50000,
+    "train_unfreeze": "encoder_only",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 50.0,
+    "direct_pnl_temperature": 2.0,
+    "direct_pnl_top_k": 10,
+    "direct_pnl_entropy_coef": 0.02,
+    "direct_pnl_uniform_mix": 0.1,
+    "direct_pnl_baseline_subtract": true,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU6v4_TRUE_unfreezeAll_50k",
+    "_note": "FIXED: --ob-unfreeze all (actually unfreezes main encoder + OB encoder + fusion). Previous PU6v* runs were head-only due to CLI flag misrouting.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 1e-05,
+    "train_max_steps": 50000,
+    "train_ob_unfreeze": "all",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 200.0,
+    "direct_pnl_temperature": 1.0,
+    "direct_pnl_top_k": 10,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU_RECOVERY_2v4_TRUE_encoder_50k",
+    "_note": "FIXED: --ob-unfreeze all + bandit+entropy+uniform+baseline_subtract recipe. Proper encoder unfreeze this time.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 3e-05,
+    "train_max_steps": 50000,
+    "train_ob_unfreeze": "all",
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.05,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 50.0,
+    "direct_pnl_temperature": 2.0,
+    "direct_pnl_top_k": 10,
+    "direct_pnl_entropy_coef": 0.02,
+    "direct_pnl_uniform_mix": 0.1,
+    "direct_pnl_baseline_subtract": true,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU7_BalancedLR_architect_recipe",
+    "_note": "ML architect 2026-05-14 recipe: head:lora:back=1:0.5:0.3 ratios, lr=5e-5, focal/rank anchors restored, cosine decay to 5%, weight_decay=0.01, grad_clip=1.0, head_dropout=0.2, 15k steps, eval every 1000.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 5e-05,
+    "train_max_steps": 15000,
+    "train_warmup_steps_pct": 0.05,
+    "train_lr_min_ratio": 0.05,
+    "train_lr_ratio_lora": 0.5,
+    "train_lr_ratio_backbone": 0.3,
+    "train_weight_decay": 0.01,
+    "train_gradient_clip_val": 1.0,
+    "train_ob_unfreeze": "all",
+    "head_dropout": 0.2,
+    "rank_loss_weight_long": 0.5,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.2,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 50.0,
+    "direct_pnl_temperature": 1.5,
+    "direct_pnl_top_k": 10,
+    "direct_pnl_entropy_coef": 0.01,
+    "direct_pnl_uniform_mix": 0.0,
+    "direct_pnl_baseline_subtract": true,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "PU7_AggressiveBackboneLR",
+    "_note": "Variant: even higher backbone ratio (0.5) to ensure backbone learns faster. Otherwise identical to PU7_BalancedLR.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 5e-05,
+    "train_max_steps": 15000,
+    "train_warmup_steps_pct": 0.05,
+    "train_lr_min_ratio": 0.05,
+    "train_lr_ratio_lora": 0.5,
+    "train_lr_ratio_backbone": 0.5,
+    "train_weight_decay": 0.01,
+    "train_gradient_clip_val": 1.0,
+    "train_ob_unfreeze": "all",
+    "head_dropout": 0.2,
+    "rank_loss_weight_long": 0.5,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.2,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 50.0,
+    "direct_pnl_temperature": 1.5,
+    "direct_pnl_top_k": 10,
+    "direct_pnl_entropy_coef": 0.01,
+    "direct_pnl_uniform_mix": 0.0,
+    "direct_pnl_baseline_subtract": true,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "E2_trainTight_deployWide",
+    "label_tgt_pct": 0.004,
+    "label_stop_pct": 0.0025,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.01,
+    "backtest_stop_pct": 0.004,
+    "backtest_h_max_min": 120
+  },
+  {
+    "id": "E3_trainWide_deployTight",
+    "label_tgt_pct": 0.012,
+    "label_stop_pct": 0.004,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 120,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.006,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60
+  },
+  {
+    "id": "F1_longHoriz_RR2_h180",
+    "label_tgt_pct": 0.01,
+    "label_stop_pct": 0.005,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 180,
+    "label_cost_bps": 19,
+    "train_lr": 7e-05,
+    "train_max_steps": 16000,
+    "backtest_target_pct": 0.01,
+    "backtest_stop_pct": 0.005,
+    "backtest_h_max_min": 180
+  },
+  {
+    "id": "G1_stopWiderThanTgt",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.006,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.006,
+    "backtest_h_max_min": 60
+  },
+  {
+    "id": "H1_labelCheapCost_deployRetail",
+    "label_tgt_pct": 0.006,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 90,
+    "label_cost_bps": 5,
+    "train_lr": 0.0003,
+    "train_max_steps": 8000,
+    "backtest_target_pct": 0.009,
+    "backtest_stop_pct": 0.0045,
+    "backtest_h_max_min": 120
+  },
+  {
+    "id": "J1_pure_bandit",
+    "label_tgt_pct": 0.01,
+    "label_stop_pct": 0.005,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 120,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.01,
+    "backtest_stop_pct": 0.005,
+    "backtest_h_max_min": 120,
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.1,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 200.0,
+    "direct_pnl_temperature": 0.5,
+    "direct_pnl_top_k": 5
+  },
+  {
+    "id": "J2_pure_ranking",
+    "label_tgt_pct": 0.01,
+    "label_stop_pct": 0.005,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 120,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.01,
+    "backtest_stop_pct": 0.005,
+    "backtest_h_max_min": 120,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 1.0,
+    "focal_aux_weight": 0.3,
+    "cls_aux_weight": 0.1,
+    "direct_pnl_loss_weight": 0.0
+  },
+  {
+    "id": "J3_bandit_aggressive",
+    "label_tgt_pct": 0.0075,
+    "label_stop_pct": 0.004,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 90,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.0075,
+    "backtest_stop_pct": 0.004,
+    "backtest_h_max_min": 90,
+    "rank_loss_weight_long": 0.2,
+    "rank_loss_weight_short": 0.2,
+    "focal_aux_weight": 0.0,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 500.0,
+    "direct_pnl_temperature": 0.5,
+    "direct_pnl_top_k": 3
+  },
+  {
+    "id": "J4_bandit_topk20",
+    "label_tgt_pct": 0.0075,
+    "label_stop_pct": 0.004,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 90,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.0075,
+    "backtest_stop_pct": 0.004,
+    "backtest_h_max_min": 90,
+    "rank_loss_weight_long": 0.5,
+    "rank_loss_weight_short": 0.5,
+    "focal_aux_weight": 0.2,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 100.0,
+    "direct_pnl_temperature": 1.5,
+    "direct_pnl_top_k": 20
+  },
+  {
+    "id": "K3_fixedHorizonExit_bandit",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 0,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 30,
+    "rank_loss_weight_long": 0.3,
+    "rank_loss_weight_short": 0.3,
+    "focal_aux_weight": 0.1,
+    "cls_aux_weight": 0.05,
+    "direct_pnl_loss_weight": 200.0,
+    "direct_pnl_temperature": 0.5,
+    "direct_pnl_top_k": 5,
+    "backtest_use_first_touch": false
+  },
+  {
+    "id": "K4_pureBandit_tightTgt",
+    "label_tgt_pct": 0.003,
+    "label_stop_pct": 0.002,
+    "label_entry_offset_min": 0,
+    "label_h_max_min": 30,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.003,
+    "backtest_stop_pct": 0.002,
+    "backtest_h_max_min": 30,
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.1,
+    "cls_aux_weight": 0.05,
+    "direct_pnl_loss_weight": 200.0,
+    "direct_pnl_temperature": 0.5,
+    "direct_pnl_top_k": 5
+  },
+  {
+    "id": "K5_nifty50_retail",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 0,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 1.0,
+    "focal_aux_weight": 0.3,
+    "cls_aux_weight": 0.1,
+    "direct_pnl_loss_weight": 0.0,
+    "backtest_max_symbols": 50,
+    "backtest_slippage_bps_override": 6
+  },
+  {
+    "id": "K6_smallSize_topK20_45m",
+    "label_tgt_pct": 0.004,
+    "label_stop_pct": 0.0025,
+    "label_entry_offset_min": 0,
+    "label_h_max_min": 45,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.004,
+    "backtest_stop_pct": 0.0025,
+    "backtest_h_max_min": 45,
+    "rank_loss_weight_long": 0.5,
+    "rank_loss_weight_short": 0.5,
+    "focal_aux_weight": 0.2,
+    "cls_aux_weight": 0.1,
+    "direct_pnl_loss_weight": 100.0,
+    "direct_pnl_temperature": 0.7,
+    "direct_pnl_top_k": 20,
+    "backtest_position_size_pct": 0.005,
+    "backtest_variants_extra": [
+      {
+        "tag": "top20",
+        "args": [
+          "--long-top-k",
+          "20"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "S2_K3variant_fixedH_30min_long",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 0,
+    "label_h_max_min": 30,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 30,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.3,
+    "cls_aux_weight": 0.1,
+    "direct_pnl_loss_weight": 100.0,
+    "direct_pnl_temperature": 1.0,
+    "direct_pnl_top_k": 10,
+    "rank_target_temperature_long": 0.02,
+    "backtest_use_first_touch": false
+  },
+  {
+    "id": "S4_multitask_dualLabel_peaked",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 0,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 7e-05,
+    "train_max_steps": 14000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.6,
+    "cls_aux_weight": 0.4,
+    "direct_pnl_loss_weight": 60.0,
+    "direct_pnl_temperature": 0.7,
+    "direct_pnl_top_k": 5,
+    "rank_target_temperature_long": 0.008,
+    "backtest_variants_extra": [
+      {
+        "tag": "top1_T0.30",
+        "args": [
+          "--long-top-k",
+          "1",
+          "--long-score-threshold",
+          "0.30"
+        ]
+      },
+      {
+        "tag": "top1_T0.35",
+        "args": [
+          "--long-top-k",
+          "1",
+          "--long-score-threshold",
+          "0.35"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "A2_CurveF_K2_on_A2labels",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 2,
+    "backtest_score_exit_curve": [
+      [
+        -0.008,
+        1
+      ],
+      [
+        -0.004,
+        1
+      ],
+      [
+        -0.002,
+        2
+      ],
+      [
+        -0.0005,
+        4
+      ],
+      [
+        0.0005,
+        6
+      ],
+      [
+        0.004,
+        4
+      ],
+      [
+        0.008,
+        2
+      ]
+    ]
+  },
+  {
+    "id": "A2_CurveF_T05_k2",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "train_unfreeze": "none",
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 2,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_threshold": 0.05
+  },
+  {
+    "id": "PU_control_frozen",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "train_unfreeze": "none",
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 0.0,
+    "rank_loss_weight_short": 0.0,
+    "focal_aux_weight": 0.0,
+    "cls_aux_weight": 0.0,
+    "direct_pnl_loss_weight": 100.0,
+    "direct_pnl_temperature": 1.0,
+    "direct_pnl_top_k": 10,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ]
+  },
+  {
+    "id": "A2_CurveF_T08_k1",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "train_unfreeze": "none",
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 1,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_threshold": 0.08
+  },
+  {
+    "id": "F1_CurveF_pct_gate_top5",
+    "_note": "Frontier 1: percentile entry gate (top 5% of cross-section). Pairs with Curve F. Symlinks A2 ckpt.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_pct_gate": 0.05
+  },
+  {
+    "id": "F1b_CurveF_pct_gate_top3",
+    "_note": "Frontier 1 variant: stricter pct gate at top 3%.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_pct_gate": 0.03
+  },
+  {
+    "id": "F5_compound_gate_aggressive",
+    "_note": "Frontier 5 (compound): top 3% pct AND absolute > 0.10. Plus k=2 + curve. Highest-conviction trades only.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 2,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_pct_gate": 0.03,
+    "backtest_long_score_threshold": 0.1
+  },
+  {
+    "id": "T23_CurveF_strict_threshold",
+    "_note": "Breakthrough: T=0.23 + Curve F + score_rerank K=3 on A2 ckpt. Retail = -0.68% (best retail result by 9pp). Symlinks A2 ckpt.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_threshold": 0.23
+  },
+  {
+    "id": "T22_CurveF_threshold",
+    "_note": "Less strict variant: T=0.22 (n=616 vs T=0.23's n=27). Tests middle ground.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 60,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_threshold": 0.22
+  },
+  {
+    "id": "T23_extended_hold_120m",
+    "_note": "P3: T23 ckpt + h_max=120min (vs 60) on backtest. Longer hold for slow-developing winners. A2 ckpt symlink.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 120,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_threshold": 0.23
+  },
+  {
+    "id": "T22_extended_hold_120m",
+    "_note": "P3 variant: T22 + extended hold. More trades than T23 but same h_max=120.",
+    "label_tgt_pct": 0.005,
+    "label_stop_pct": 0.003,
+    "label_entry_offset_min": 5,
+    "label_h_max_min": 60,
+    "label_cost_bps": 19,
+    "train_lr": 0.0001,
+    "train_max_steps": 12000,
+    "backtest_target_pct": 0.005,
+    "backtest_stop_pct": 0.003,
+    "backtest_h_max_min": 120,
+    "rank_loss_weight_long": 1.0,
+    "rank_loss_weight_short": 0.0,
+    "backtest_exit_mode": "score_rerank",
+    "backtest_score_rerank_k": 3,
+    "backtest_score_exit_curve": [
+      [
+        -0.01,
+        1
+      ],
+      [
+        -0.005,
+        1
+      ],
+      [
+        -0.003,
+        2
+      ],
+      [
+        -0.001,
+        5
+      ],
+      [
+        0.001,
+        8
+      ],
+      [
+        0.005,
+        5
+      ],
+      [
+        0.01,
+        3
+      ]
+    ],
+    "backtest_long_score_threshold": 0.22
+  }
+]
