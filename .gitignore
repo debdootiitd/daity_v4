@@ -36,8 +36,11 @@ reports/*.pt
 reports/**/*.pt
 !reports/.gitkeep
 
-# Local agent / IDE state
-.claude/
+# Local agent / IDE state. Whitelist memory/ (durable cross-session notes
+# for Claude agents); ignore transient runtime files like the schedule lock.
+.claude/*
+!.claude/memory/
+!.claude/memory/**
 
 # --- Python ---
 __pycache__/
