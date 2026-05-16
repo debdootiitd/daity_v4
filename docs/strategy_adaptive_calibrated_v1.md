@@ -363,7 +363,16 @@ today_pnl_bps       : Float     — realized P&L for day D (0 = sat out)
 | **4. GBM strategy** | **`adaptive_calibrated_strategy.py`** | **No** | **Yes (~85s)** | **Daily use** |
 | Eval/analysis | `eval_cohort_pnl.py`, `conformal_calibration.py` | No | Yes | Post-hoc only |
 
-**To shut down the GPU instance:** ensure `reports/v11_static_predictions_2025_2026.parquet` is pulled to local disk. Stages 1–3 are complete for v11. Stage 4 (daily strategy) runs locally.
+**To shut down the GPU instance:** pull these four artifacts first, then the instance can be destroyed:
+
+| Artifact | Size | Local path | Status |
+|----------|------|-----------|--------|
+| `reports/v11_static_predictions_2025_2026.parquet` | 2 MB | `reports/` | ✅ local |
+| `runs/pair_dataset_v1/` (pairs + facts) | 9 MB | `runs/pair_dataset_v1/` | ✅ local |
+| `runs/contrastive_pretrain_v1/checkpoints/last=2000.pt` | 13 MB | `runs/contrastive_pretrain_v1/checkpoints/` | ✅ local |
+| `runs/cohort_modeA_v11_from_contrastive/checkpoints/best.pt` | 248 MB | `runs/cohort_modeA_v11_from_contrastive/checkpoints/` | ✅ local |
+
+All pulled as of 2026-05-17. **GPU instance can be shut down.** Stages 1–3 are complete for v11. Stage 4 (daily strategy) runs locally with no GPU.
 
 ---
 
