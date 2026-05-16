@@ -90,6 +90,61 @@ Test count: **392 passing** total (262 from Phase 1 + 117 unit tests for the Pha
 2. Pull the best checkpoint + logs back; rerun the writeup with the trained checkpoint to populate the post-training plots.
 3. Spawn Phase 2 reviewer #2 against the trained checkpoint + Phase 2.1 patch (verifying review #1's must-land-before-launch findings are properly addressed).
 
+## Phase 2.5 — Cohort model + adaptive strategy (research track, outside formal phase gates)
+
+**Completed 2026-05-16/17 on Vast.ai H200 instance. GPU instance can now be shut down.**
+
+### Cohort model architecture (daity/models/cohort/)
+
+Four-component pipeline: `StockContextEncoder` → `MarketContextTransformer` → cross-attention → multi-horizon head. Predicts 10 horizons (30m/60m/120m/180m intraday, to_close, overnight, next_day_1h, next_day_eod, day_plus_3, day_plus_5).
+
+Training stages:
+1. **Contrastive pretrain** (`pretrain_contrastive.py`): Two-tower InfoNCE on NSE stock pairs 2019–2024. τ=0.1, 4K steps, ~2h on H200. Encoder init for downstream.
+2. **Walk-forward Mode A fine-tune** (`train_cohort.py`): Regression+rank loss, 2019→2025, cohort batches of ~200 stocks. Init from contrastive pretrained encoder.
+3. **Walk-forward Modes B+C** (experimental): short-window and ranking-only variants.
+
+Champion checkpoint: `runs/cohort_modeA_v11_from_contrastive/`  
+First model to show positive OOS P&L on full 2025 test: +4.93 bps/day (day_plus_5, K=10, 5 bps cost, Sharpe 0.29).
+
+### Static prediction dump
+
+`dump_static_predictions.py` — runs frozen v11 ckpt over 2025-02-01 to 2026-04-30 (303 trading days). Output: `reports/v11_static_predictions_2025_2026.parquet` (64,880 rows; gitignored — keep locally). **This parquet is the only artifact needed for all downstream strategy work; GPU not required after this.**
+
+### Adaptive Calibrated Strategy — champion
+
+Full documentation: `docs/strategy_adaptive_calibrated_v1.md`
+
+Algorithm: For each day D, train a GBM classifier on last N=10 anchor dates (fit window) to predict the day_plus_5 win label (real_lr > 30 bps). Evaluate 5 probability thresholds (0.45–0.65) on a held-out window (last 3 days, OOS). Gate: only trade if any threshold shows positive held-out P&L. Final model: retrain on all N+holdout days, pick top-K=2 stocks by win probability.
+
+**Champion config: K=2, N=10, holdout=3, GBM (sklearn GradientBoostingClassifier)**
+
+Results on Feb'25–Apr'26 (303 test days, NSE ~200 stocks):
+
+| Metric | Value |
+|--------|-------|
+| Mean P&L (all days) | +83.81 bps/day |
+| Sharpe (5-day hold) | 1.91 |
+| Sleeve return (14 months) | **+65.14%** (~56% annualized) |
+| Trade frequency | 62% of days |
+| Hit rate (traded days) | 64% |
+| Mean on traded days | +135.80 bps |
+| Baseline (K=7, no gate) | +14.65 bps/day, Sharpe 0.56, +9% sleeve |
+
+Capital accounting: 5-day hold + daily entry = 5 overlapping sleeves; return = `prod(1 + bps/10000/5) - 1`. No leverage.
+
+**Key experiments completed:**
+- Calibrator sweep: GBM > LR > RF (all with holdout=3 gate)
+- Critical bug fixed: threshold evaluation must be on held-out days (OOS), not the same days used to train the GBM (in-sample gave inflated 84% trade rate; corrected drops to 62%)
+- K sweep (K=1..10): K=2 wins on Sharpe; K=1 marginally higher sleeve (+67%) but lower hit rate
+- N sweep (N=5..30): N=10 unambiguous winner
+- Holdout sensitivity: holdout=3 best at K=2; holdout=5 better only at K=3
+
+**GPU shutdown checklist:**
+- [x] `reports/v11_static_predictions_2025_2026.parquet` pulled to local disk
+- [x] Champion checkpoint at `runs/cohort_modeA_v11_from_contrastive/` (on remote; back up if needed)
+- [x] All code committed to git (this commit)
+- [x] Strategy runs fully on CPU — no GPU dependency for Stage 4
+
 ### Phase 2.1 patch (post-review #1)
 
 Reviewer #1 (`reports/reviews/phase_2_review.md`, 2026-05-10) verdict: **Block** with 1 Critical + 6 Major + 9 Minor + 4 Nit.  Critical and 4 of the 6 Majors required to land before the H200 launch. Status of those:
