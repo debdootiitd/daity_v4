@@ -77,6 +77,43 @@ def _ist_to_utc(d: date, t: dtime) -> datetime:
     return (datetime.combine(d, t) - timedelta(hours=5, minutes=30)).replace(tzinfo=UTC)
 
 
+def _parse_anchors(spec: str | None, default_single: str) -> list[dtime]:
+    """Parse anchor spec. Either:
+      - 'HH:MM' (single)
+      - 'HH:MM,HH:MM,...' (comma list)
+      - 'HH:MM-HH:MM:NNm' (range with step in minutes)
+    """
+    src = spec or default_single
+    out: list[dtime] = []
+    if "-" in src and ":" in src.split("-", 1)[1]:
+        # Range spec: HH:MM-HH:MM:NNm
+        try:
+            range_part, step_part = src.rsplit(":", 1)
+            start_s, end_s = range_part.split("-")
+            if not step_part.endswith("m"):
+                raise ValueError("step must end with 'm'")
+            step_min = int(step_part[:-1])
+            sh, sm = (int(x) for x in start_s.split(":"))
+            eh, em = (int(x) for x in end_s.split(":"))
+            start_min = sh * 60 + sm
+            end_min = eh * 60 + em
+            cur = start_min
+            while cur <= end_min:
+                out.append(dtime(cur // 60, cur % 60))
+                cur += step_min
+            return out
+        except Exception as e:
+            raise ValueError(f"Bad anchor range spec '{src}': {e}")
+    # Comma list (or single)
+    for tok in src.split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        h, m = (int(x) for x in tok.split(":"))
+        out.append(dtime(h, m))
+    return out
+
+
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed-ckpt", type=Path, required=True)
@@ -94,7 +131,11 @@ def parse_args() -> argparse.Namespace:
     # Online schedule
     ap.add_argument("--label-lag-trading-days", type=int, default=2)
     ap.add_argument("--steps-per-day", type=int, default=1)
-    ap.add_argument("--anchor-ist", type=str, default="10:15")
+    ap.add_argument("--anchor-ist", type=str, default="10:15",
+                    help="Single anchor time (used when --anchors-ist not set)")
+    ap.add_argument("--anchors-ist", type=str, default=None,
+                    help="Multi-anchor spec: either comma-list (09:30,12:00,15:25) "
+                         "or range (09:15-15:30:30m). Overrides --anchor-ist.")
     # Optimizer
     ap.add_argument("--optimizer", choices=["adamw", "adagrad"], default="adagrad")
     ap.add_argument("--lr",            type=float, default=1e-3)
@@ -229,14 +270,17 @@ def main() -> int:
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = args.log_dir / "metrics.jsonl"
     preds_path = args.log_dir / "predictions.parquet"
-    h_ist, m_ist = (int(x) for x in args.anchor_ist.split(":"))
-    anchor_ist = dtime(h_ist, m_ist)
+    anchor_times = _parse_anchors(args.anchors_ist, args.anchor_ist)
+    if len(anchor_times) == 0:
+        print("ERROR: no anchors parsed", file=sys.stderr); return 1
+    anchor_ist = anchor_times[0]  # legacy: first anchor used as the "primary"
 
     # Universe + sectors
     master = SymbolMaster.from_cache(args.cache_root)
     universe, sec_by, all_sectors = _build_universe(args, master)
     print(f"universe: {len(universe)} | sectors: {len(all_sectors)} | "
-          f"anchor: {anchor_ist} IST", flush=True)
+          f"anchors: {len(anchor_times)} ({anchor_times[0]} ... {anchor_times[-1]}) IST",
+          flush=True)
 
     calendar = NSECalendar.from_cache(args.cache_root)
     store = ParquetStore(args.feature_root)
@@ -367,68 +411,73 @@ def main() -> int:
     t0 = time.time()
     n_predicted = 0
     n_trained = 0
+    last_loss = float("nan")
     for di, d in enumerate(online_days):
-        anchor_utc = _ist_to_utc(d, anchor_ist)
-        # 1. Predict for day d (no grad)
-        model.eval()
-        sample = assembler.assemble(anchor_utc)
-        if sample is not None:
-            with torch.no_grad(), torch.autocast(device_type=device, dtype=torch.bfloat16):
-                pred = _unpack_pred(model(_sample_to_batch(sample, anchor_utc, device)))
-            pred_np = pred[0].float().cpu().numpy()                       # (N, H)
-            labels_np = sample.labels.cpu().numpy()
-            label_v_np = sample.label_validity_per_stock.cpu().numpy()
-            for i, sym in enumerate(sample.symbols):
-                for h_idx in ACTIVE_HORIZON_INDICES:
-                    if not label_v_np[i, h_idx]:
-                        continue
-                    pred_rows.append({
-                        "date": d,
-                        "anchor_us": int(anchor_utc.timestamp() * 1_000_000),
-                        "stock": sym,
-                        "horizon": HORIZONS[h_idx].name,
-                        "pred_lr": float(pred_np[i, h_idx]),
-                        "real_lr": float(labels_np[i, h_idx]),
-                    })
-            n_predicted += 1
-
-        # 2. Train on D - label_lag (whose labels are realized by now)
         train_day = _shift_trading_days(d, args.label_lag_trading_days, calendar)
-        if train_day is not None and train_day >= date.fromisoformat(args.online_start):
-            train_anchor_utc = _ist_to_utc(train_day, anchor_ist)
-            train_sample = assembler.assemble(train_anchor_utc)
-            if train_sample is not None:
-                t_batch = _sample_to_batch(train_sample, train_anchor_utc, device)
-                labels = train_sample.labels.unsqueeze(0).to(device)
-                label_v = train_sample.label_validity_per_stock.unsqueeze(0).to(device)
-                labels_clean = torch.where(label_v, labels, torch.zeros_like(labels))
-                validity = _active_validity(train_sample, device)
-                validity = validity & (label_v.float().mean(dim=1) > 0.8)
-                model.train()
-                for _step in range(args.steps_per_day):
-                    optimizer.zero_grad(set_to_none=True)
-                    with torch.autocast(device_type=device, dtype=torch.bfloat16):
-                        model_out = model(t_batch)
-                        pred_t = _unpack_pred(model_out)
-                        out = loss_fn(pred_t, labels_clean, validity)
-                    out["total"].backward()
-                    if args.grad_clip > 0:
-                        torch.nn.utils.clip_grad_norm_(
-                            model.parameters(), args.grad_clip,
-                        )
-                    optimizer.step()
-                n_trained += 1
-                if di % 25 == 0:
-                    log_event({
-                        "event": "online_day",
-                        "day": str(d),
-                        "train_day": str(train_day),
-                        "train_loss": float(out["total"]),
-                        "n_predicted": n_predicted,
-                        "n_trained": n_trained,
-                    })
+        # Iterate all anchors for this trading day
+        for t_anchor in anchor_times:
+            anchor_utc = _ist_to_utc(d, t_anchor)
+            # 1. Predict for (d, t_anchor) (no grad)
+            model.eval()
+            sample = assembler.assemble(anchor_utc)
+            if sample is not None:
+                with torch.no_grad(), torch.autocast(device_type=device, dtype=torch.bfloat16):
+                    pred = _unpack_pred(model(_sample_to_batch(sample, anchor_utc, device)))
+                pred_np = pred[0].float().cpu().numpy()
+                labels_np = sample.labels.cpu().numpy()
+                label_v_np = sample.label_validity_per_stock.cpu().numpy()
+                for i, sym in enumerate(sample.symbols):
+                    for h_idx in ACTIVE_HORIZON_INDICES:
+                        if not label_v_np[i, h_idx]:
+                            continue
+                        pred_rows.append({
+                            "date": d,
+                            "anchor_us": int(anchor_utc.timestamp() * 1_000_000),
+                            "stock": sym,
+                            "horizon": HORIZONS[h_idx].name,
+                            "pred_lr": float(pred_np[i, h_idx]),
+                            "real_lr": float(labels_np[i, h_idx]),
+                        })
+                n_predicted += 1
 
-        # 3. Periodic checkpoint
+            # 2. Train on (train_day, t_anchor) — same anchor time, label-lag days back
+            if train_day is not None and train_day >= date.fromisoformat(args.online_start):
+                train_anchor_utc = _ist_to_utc(train_day, t_anchor)
+                train_sample = assembler.assemble(train_anchor_utc)
+                if train_sample is not None:
+                    t_batch = _sample_to_batch(train_sample, train_anchor_utc, device)
+                    labels = train_sample.labels.unsqueeze(0).to(device)
+                    label_v = train_sample.label_validity_per_stock.unsqueeze(0).to(device)
+                    labels_clean = torch.where(label_v, labels, torch.zeros_like(labels))
+                    validity = _active_validity(train_sample, device)
+                    validity = validity & (label_v.float().mean(dim=1) > 0.8)
+                    model.train()
+                    for _step in range(args.steps_per_day):
+                        optimizer.zero_grad(set_to_none=True)
+                        with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                            model_out = model(t_batch)
+                            pred_t = _unpack_pred(model_out)
+                            out = loss_fn(pred_t, labels_clean, validity)
+                        out["total"].backward()
+                        if args.grad_clip > 0:
+                            torch.nn.utils.clip_grad_norm_(
+                                model.parameters(), args.grad_clip,
+                            )
+                        optimizer.step()
+                    last_loss = float(out["total"])
+                    n_trained += 1
+
+        if di % 25 == 0:
+            log_event({
+                "event": "online_day",
+                "day": str(d),
+                "n_anchors": len(anchor_times),
+                "train_loss": last_loss,
+                "n_predicted": n_predicted,
+                "n_trained": n_trained,
+            })
+
+        # 3. Periodic checkpoint (daily, regardless of anchor count)
         if (di + 1) % args.ckpt_every == 0:
             torch.save({
                 "model_state_dict": model.state_dict(),
