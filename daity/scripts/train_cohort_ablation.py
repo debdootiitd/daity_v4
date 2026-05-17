@@ -89,6 +89,13 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--w-bias",  type=float, default=0.01)
     ap.add_argument("--smooth-l1-beta", type=float, default=0.005)
     ap.add_argument("--rank-top-k",     type=int,   default=20)
+    # Win-rate classifier head ablation
+    ap.add_argument("--use-classifier-head", action="store_true",
+                    help="Add per-horizon win-rate classifier head to the model")
+    ap.add_argument("--w-clf", type=float, default=0.0,
+                    help="Loss weight for classifier BCE term (only used when --use-classifier-head)")
+    ap.add_argument("--clf-threshold-bps", type=float, default=50.0,
+                    help="Win threshold (bps) for classifier label (e.g. 50 or 100)")
 
     # Optimizer
     ap.add_argument("--optimizer", choices=["adagrad", "adamw"], default="adagrad")
@@ -163,6 +170,7 @@ def main() -> int:
         market_n_heads=args.n_heads,
         cross_n_heads=args.n_heads,
         n_regime_feats=N_REGIME_FEATS,
+        enable_classifier_head=args.use_classifier_head,
     ).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"model: {n_params/1e6:.2f}M params", flush=True)
@@ -211,6 +219,8 @@ def main() -> int:
     loss_fn = CohortLoss(
         w_reg=args.w_reg, w_rank=args.w_rank, w_bias=args.w_bias,
         smooth_l1_beta=args.smooth_l1_beta, rank_top_k=args.rank_top_k,
+        w_clf=args.w_clf if args.use_classifier_head else 0.0,
+        clf_threshold_bps=args.clf_threshold_bps,
     )
 
     wandb_run = None
@@ -297,23 +307,35 @@ def main() -> int:
                 model.eval()
                 with torch.no_grad(), torch.autocast(device_type=device, dtype=torch.bfloat16):
                     bt = record_to_batch(rec, device)
-                    pred = model(bt)
-                    pred = pred["pred"] if isinstance(pred, dict) else (
-                        pred[0] if isinstance(pred, tuple) else pred)
+                    out = model(bt)
+                if isinstance(out, dict):
+                    pred = out["pred"]
+                    clf_logits = out.get("clf_logits")
+                elif isinstance(out, tuple):
+                    pred = out[0]
+                    clf_logits = None
+                else:
+                    pred = out
+                    clf_logits = None
                 pred_np = pred[0].float().cpu().numpy()
+                clf_prob_np = (torch.sigmoid(clf_logits[0]).float().cpu().numpy()
+                               if clf_logits is not None else None)
                 labels_np = rec.labels.cpu().numpy()
                 label_v_np = rec.label_validity_per_stock.cpu().numpy()
                 for i, sym in enumerate(rec.symbols):
                     for h_idx in ACTIVE_HORIZON_INDICES:
                         if not label_v_np[i, h_idx]: continue
-                        pred_rows.append({
+                        row = {
                             "date": d,
                             "anchor_us": rec.anchor_us,
                             "stock": sym,
                             "horizon": HORIZONS[h_idx].name,
                             "pred_lr": float(pred_np[i, h_idx]),
                             "real_lr": float(labels_np[i, h_idx]),
-                        })
+                        }
+                        if clf_prob_np is not None:
+                            row["pred_win_prob"] = float(clf_prob_np[i, h_idx])
+                        pred_rows.append(row)
                 n_predicted += 1
 
             # 2. Train on (D - label_lag, same anchor) using cached train sample
@@ -335,10 +357,17 @@ def main() -> int:
                 model.train()
                 optimizer.zero_grad(set_to_none=True)
                 with torch.autocast(device_type=device, dtype=torch.bfloat16):
-                    pred_t = model(train_bt)
-                    pred_t = pred_t["pred"] if isinstance(pred_t, dict) else (
-                        pred_t[0] if isinstance(pred_t, tuple) else pred_t)
-                    out = loss_fn(pred_t, labels_clean, validity)
+                    raw = model(train_bt)
+                    if isinstance(raw, dict):
+                        pred_t = raw["pred"]
+                        clf_t = raw.get("clf_logits")
+                    elif isinstance(raw, tuple):
+                        pred_t = raw[0]; clf_t = None
+                    else:
+                        pred_t = raw; clf_t = None
+                    out = loss_fn(pred_t, labels_clean, validity,
+                                  clf_logits=clf_t,
+                                  label_validity_per_stock=label_v)
                 out["total"].backward()
                 if args.grad_clip > 0:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)

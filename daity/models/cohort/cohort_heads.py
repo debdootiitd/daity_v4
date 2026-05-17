@@ -41,6 +41,7 @@ class CohortHeads(nn.Module):
         n_heads: int = 8,
         ffn_ratio: int = 2,
         query_init_std: float = 0.02,
+        enable_classifier: bool = False,
     ) -> None:
         super().__init__()
         if n_horizons <= 0:
@@ -53,6 +54,7 @@ class CohortHeads(nn.Module):
             raise ValueError(msg)
         self.d_model = d_model
         self.n_horizons = n_horizons
+        self.enable_classifier = enable_classifier
         # Learnable per-horizon queries — one per horizon. Each carries the
         # "what does horizon h look like" prior, updated by cross-attention.
         self.queries = nn.Parameter(
@@ -67,12 +69,22 @@ class CohortHeads(nn.Module):
         # (cohort, stock) since each horizon's query already carries
         # horizon-specific structure.
         self.proj = nn.Linear(d_model, 1)
+        # Optional per-horizon classifier head: P(real_lr > threshold).
+        # Shares the cross-attention conditioned features with the regression
+        # head, only the final linear is separate. Adds n_horizons × d_model
+        # parameters (~3840 for d_model=480, H=8). Output: logits.
+        if enable_classifier:
+            self.proj_clf = nn.Linear(d_model, 1)
+        else:
+            self.proj_clf = None
 
-    def forward(self, conditioned: torch.Tensor) -> torch.Tensor:
-        """`(B, N, S, d_model)` → `(B, N, n_horizons)`.
+    def forward(self, conditioned: torch.Tensor) -> dict[str, torch.Tensor] | torch.Tensor:
+        """`(B, N, S, d_model)` → regression `(B, N, H)` or dict with both.
 
-        Each stock's S tokens are independently queried by H per-horizon
-        queries via cross-attention.
+        If `enable_classifier` is False (default), returns the regression
+        tensor directly for backward compatibility. If True, returns:
+            {"reg": (B, N, H) log-return predictions,
+             "clf": (B, N, H) classifier logits (BCEWithLogits-ready)}
         """
         if conditioned.dim() != 4:
             msg = (
@@ -86,5 +98,8 @@ class CohortHeads(nn.Module):
         for block in self.blocks:
             q = block(q, kv)                                      # (B*N, H, D)
         q = self.final_norm(q)
-        scalars = self.proj(q).squeeze(-1)                        # (B*N, H)
-        return scalars.view(B, N, self.n_horizons)
+        reg = self.proj(q).squeeze(-1).view(B, N, self.n_horizons)  # (B, N, H)
+        if self.proj_clf is None:
+            return reg
+        clf = self.proj_clf(q).squeeze(-1).view(B, N, self.n_horizons)  # (B, N, H)
+        return {"reg": reg, "clf": clf}

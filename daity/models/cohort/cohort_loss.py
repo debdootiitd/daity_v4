@@ -102,6 +102,8 @@ class CohortLoss(nn.Module):
         w_bias: float = 0.1,
         w_sector: float = 0.0,
         w_contrastive: float = 0.0,
+        w_clf: float = 0.0,
+        clf_threshold_bps: float = 50.0,
         contrastive_ret_sim_thresh: float = 0.5,
         contrastive_tau: float = 0.1,
         smooth_l1_beta: float = 1.0,
@@ -113,6 +115,8 @@ class CohortLoss(nn.Module):
         self.w_bias = float(w_bias)
         self.w_sector = float(w_sector)
         self.w_contrastive = float(w_contrastive)
+        self.w_clf = float(w_clf)
+        self.clf_threshold_bps = float(clf_threshold_bps)
         self.contrastive_ret_sim_thresh = float(contrastive_ret_sim_thresh)
         self.contrastive_tau = float(contrastive_tau)
         self.smooth_l1_beta = float(smooth_l1_beta)
@@ -129,6 +133,7 @@ class CohortLoss(nn.Module):
         contrastive_embeds: torch.Tensor | None = None,
         contrastive_sector_ids: torch.Tensor | None = None,
         label_validity_per_stock: torch.Tensor | None = None,
+        clf_logits: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Compute loss components and totals.
 
@@ -211,12 +216,34 @@ class CohortLoss(nn.Module):
         else:
             loss_contrastive = torch.zeros((), device=pred.device, dtype=pred.dtype)
 
+        # Win-rate classifier head: BCE on per-(stock, horizon) win label.
+        # Win = (target > threshold_bps / 10000). Per-stock label validity
+        # mask (when available) keeps only valid (b, n, h) cells in the loss.
+        if self.w_clf > 0.0 and clf_logits is not None:
+            win_thr = self.clf_threshold_bps / 10000.0
+            win_target = (target > win_thr).to(clf_logits.dtype)              # (B, N, H)
+            # Per-cell BCE; mask out invalid (b, h) horizons and per-stock
+            # label-validity if provided.
+            bce_per_cell = F.binary_cross_entropy_with_logits(
+                clf_logits, win_target, reduction="none",
+            )                                                                  # (B, N, H)
+            cell_mask = validity_mask.unsqueeze(1).to(bce_per_cell.dtype)      # (B, 1, H)
+            if label_validity_per_stock is not None:
+                cell_mask = cell_mask * label_validity_per_stock.to(bce_per_cell.dtype)
+            else:
+                cell_mask = cell_mask.expand_as(bce_per_cell)
+            n_cells = cell_mask.sum().clamp_min(1.0)
+            loss_clf = (bce_per_cell * cell_mask).sum() / n_cells
+        else:
+            loss_clf = torch.zeros((), device=pred.device, dtype=pred.dtype)
+
         total = (
             self.w_reg          * loss_reg +
             self.w_rank         * loss_rank +
             self.w_bias         * loss_bias +
             self.w_sector       * loss_sector +
-            self.w_contrastive  * loss_contrastive
+            self.w_contrastive  * loss_contrastive +
+            self.w_clf          * loss_clf
         )
         return {
             "total":       total,
@@ -225,6 +252,7 @@ class CohortLoss(nn.Module):
             "bias":        loss_bias.detach(),
             "sector":      loss_sector.detach(),
             "contrastive": loss_contrastive.detach(),
+            "clf":         loss_clf.detach(),
             "n_valid_horizons": n_valid.detach(),
         }
 

@@ -88,6 +88,10 @@ class CohortModel(nn.Module):
         # for use by InfoNCE in the loss. Operates on the encoder's raw CLS
         # (pre-market-context) so the encoder is directly forced to organize.
         contrastive_dim: int = 0,
+        # Win-rate classifier head: per-horizon P(real_lr > threshold).
+        # When True, the model emits both regression and classifier logits.
+        # Threshold is set in the loss / strategy layer, not the model.
+        enable_classifier_head: bool = False,
     ) -> None:
         super().__init__()
         self.d_model = d_model
@@ -131,6 +135,7 @@ class CohortModel(nn.Module):
             n_layers=head_n_layers,
             n_heads=head_n_heads,
             ffn_ratio=head_ffn_ratio,
+            enable_classifier=enable_classifier_head,
         )
         # Optional sector classification head (operates on the encoder's
         # stock CLS, BEFORE market context — so it directly supervises the
@@ -233,10 +238,20 @@ class CohortModel(nn.Module):
 
         # --- (D) Heads: per-horizon queries cross-attend over each stock's
         # full conditioned sequence (CLS + patch tokens). ----
-        pred = self.heads(conditioned)                                 # (B, N, H)
-        if sector_logits is not None or contrastive_embeds is not None:
+        head_out = self.heads(conditioned)
+        # head_out is either a Tensor (B, N, H) when classifier is disabled,
+        # or a dict {"reg": ..., "clf": ...} when enabled.
+        if isinstance(head_out, dict):
+            pred = head_out["reg"]
+            clf_logits = head_out.get("clf")
+        else:
+            pred = head_out
+            clf_logits = None
+        if (sector_logits is not None or contrastive_embeds is not None
+                or clf_logits is not None):
             return {
                 "pred": pred,
+                "clf_logits": clf_logits,
                 "sector_logits": sector_logits,
                 "contrastive_embeds": contrastive_embeds,
             }
