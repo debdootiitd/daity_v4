@@ -136,6 +136,17 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--anchors-ist", type=str, default=None,
                     help="Multi-anchor spec: either comma-list (09:30,12:00,15:25) "
                          "or range (09:15-15:30:30m). Overrides --anchor-ist.")
+    ap.add_argument("--anchors-batch-size", type=int, default=1,
+                    help="Number of consecutive anchors to batch into a single forward "
+                         "pass for training. >1 increases GPU util at the cost of "
+                         "per-anchor optimizer steps. Predictions still happen per-anchor.")
+    ap.add_argument("--resume-optimizer", action="store_true",
+                    help="When loading --seed-ckpt, also restore optimizer_state_dict "
+                         "(for resume-from-day-X continuations).")
+    ap.add_argument("--predict-from-date", type=str, default=None,
+                    help="Skip the prediction forward pass for online_days strictly "
+                         "before this date (YYYY-MM-DD). Training still happens. "
+                         "Useful to skip GPU work during long pre-test warmup.")
     # Optimizer
     ap.add_argument("--optimizer", choices=["adamw", "adagrad"], default="adagrad")
     ap.add_argument("--lr",            type=float, default=1e-3)
@@ -234,6 +245,42 @@ def _sample_to_batch(sample, anchor_utc: datetime, device: str) -> dict:
     }
 
 
+def _stack_batch(samples_anchors: list[tuple], device: str) -> dict:
+    """Stack a list of (sample, anchor_utc) into a single batch dict (B=len)."""
+    samples = [s for s, _ in samples_anchors]
+    anchors = [a for _, a in samples_anchors]
+    return {
+        "x_by_scale": {sc: torch.stack([s.x_by_scale[sc] for s in samples], dim=0).to(device)
+                       for sc in samples[0].x_by_scale.keys()},
+        "stock_ids":  torch.stack([s.stock_ids for s in samples], dim=0).to(device),
+        "sector_ids": torch.stack([s.sector_ids for s in samples], dim=0).to(device),
+        "anchor_ts":  torch.tensor(
+            [int(a.timestamp() * 1_000_000) for a in anchors],
+            dtype=torch.int64, device=device,
+        ),
+        "regime_feats": torch.stack([s.regime_feats for s in samples], dim=0).to(device),
+    }
+
+
+def _stack_labels_validity(samples: list, device: str):
+    """Stack labels + per-stock validity + active-horizon validity for batched training."""
+    labels = torch.stack([s.labels for s in samples], dim=0).to(device)              # (B, N, H)
+    label_v = torch.stack([s.label_validity_per_stock for s in samples], dim=0).to(device)
+    labels_clean = torch.where(label_v, labels, torch.zeros_like(labels))
+    # Per-horizon active mask (same across batch)
+    val_list = []
+    for s in samples:
+        v = s.validity.clone()
+        for i in range(N_HORIZONS):
+            if i not in ACTIVE_HORIZON_INDICES:
+                v[i] = False
+        val_list.append(v)
+    validity = torch.stack(val_list, dim=0).to(device)                                # (B, H)
+    # Also: drop horizons whose per-stock label_v is bad
+    validity = validity & (label_v.float().mean(dim=1) > 0.8)
+    return labels_clean, validity
+
+
 def _active_validity(sample, device: str) -> torch.Tensor:
     """Validity mask restricted to ACTIVE horizons (drop d3, d5)."""
     validity = sample.validity.clone()
@@ -301,6 +348,17 @@ def main() -> int:
     print(f"loading seed: {args.seed_ckpt}", flush=True)
     sd = torch.load(args.seed_ckpt, map_location=device, weights_only=False)
     m_sd = sd.get("cohort_init_state_dict", sd.get("model_state_dict", sd))
+    # Drop tensors whose shape doesn't match.
+    cur = model.state_dict()
+    dropped = []
+    for k in list(m_sd.keys()):
+        if k in cur and m_sd[k].shape != cur[k].shape:
+            dropped.append((k, tuple(m_sd[k].shape), tuple(cur[k].shape)))
+            del m_sd[k]
+    if dropped:
+        print(f"  dropping {len(dropped)} mismatched-shape tensors:", flush=True)
+        for k, src, dst in dropped:
+            print(f"    {k}: ckpt={src} model={dst}", flush=True)
     missing, unexpected = model.load_state_dict(m_sd, strict=False)
     print(f"  loaded | missing={len(missing)} unexpected={len(unexpected)}", flush=True)
 
@@ -314,6 +372,13 @@ def main() -> int:
             model.parameters(), lr=args.lr, weight_decay=args.weight_decay,
             betas=(0.9, 0.95),
         )
+    # Restore optimizer state from seed ckpt (for resume-from-day-X)
+    if args.resume_optimizer and "optimizer_state_dict" in sd:
+        try:
+            optimizer.load_state_dict(sd["optimizer_state_dict"])
+            print(f"  restored optimizer state from seed ckpt", flush=True)
+        except Exception as e:
+            print(f"  WARNING: failed to restore optimizer state: {e}", flush=True)
 
     loss_fn = CohortLoss(
         w_reg=args.w_reg, w_rank=args.w_rank, w_bias=args.w_bias,
@@ -412,15 +477,20 @@ def main() -> int:
     n_predicted = 0
     n_trained = 0
     last_loss = float("nan")
+    bs = max(1, args.anchors_batch_size)
+    predict_from = date.fromisoformat(args.predict_from_date) if args.predict_from_date else None
     for di, d in enumerate(online_days):
         train_day = _shift_trading_days(d, args.label_lag_trading_days, calendar)
+        do_predict = predict_from is None or d >= predict_from
         # Iterate all anchors for this trading day
-        for t_anchor in anchor_times:
+        # Predictions are still per-anchor; training is batched in groups of `bs`.
+        train_buf: list[tuple] = []  # collected (train_sample, train_anchor_utc)
+        for ai, t_anchor in enumerate(anchor_times):
             anchor_utc = _ist_to_utc(d, t_anchor)
-            # 1. Predict for (d, t_anchor) (no grad)
+            # 1. Predict for (d, t_anchor) (no grad) -- skip during pre-test warmup
             model.eval()
-            sample = assembler.assemble(anchor_utc)
-            if sample is not None:
+            sample = assembler.assemble(anchor_utc) if do_predict else None
+            if sample is not None and do_predict:
                 with torch.no_grad(), torch.autocast(device_type=device, dtype=torch.bfloat16):
                     pred = _unpack_pred(model(_sample_to_batch(sample, anchor_utc, device)))
                 pred_np = pred[0].float().cpu().numpy()
@@ -440,23 +510,24 @@ def main() -> int:
                         })
                 n_predicted += 1
 
-            # 2. Train on (train_day, t_anchor) — same anchor time, label-lag days back
+            # 2. Train on (train_day, t_anchor) — accumulate `bs` anchors then step
             if train_day is not None and train_day >= date.fromisoformat(args.online_start):
                 train_anchor_utc = _ist_to_utc(train_day, t_anchor)
                 train_sample = assembler.assemble(train_anchor_utc)
                 if train_sample is not None:
-                    t_batch = _sample_to_batch(train_sample, train_anchor_utc, device)
-                    labels = train_sample.labels.unsqueeze(0).to(device)
-                    label_v = train_sample.label_validity_per_stock.unsqueeze(0).to(device)
-                    labels_clean = torch.where(label_v, labels, torch.zeros_like(labels))
-                    validity = _active_validity(train_sample, device)
-                    validity = validity & (label_v.float().mean(dim=1) > 0.8)
+                    # Same-N batching: only add to buf if it matches first sample's stock count.
+                    # (Cohort sizes can vary by 1-2 stocks per anchor due to data gaps.)
+                    if not train_buf or train_sample.labels.shape[0] == train_buf[0][0].labels.shape[0]:
+                        train_buf.append((train_sample, train_anchor_utc))
+                # Flush buffer when full or at the last anchor of the day
+                if len(train_buf) >= bs or (ai == len(anchor_times) - 1 and train_buf):
+                    t_batch = _stack_batch(train_buf, device)
+                    labels_clean, validity = _stack_labels_validity([s for s, _ in train_buf], device)
                     model.train()
                     for _step in range(args.steps_per_day):
                         optimizer.zero_grad(set_to_none=True)
                         with torch.autocast(device_type=device, dtype=torch.bfloat16):
-                            model_out = model(t_batch)
-                            pred_t = _unpack_pred(model_out)
+                            pred_t = _unpack_pred(model(t_batch))
                             out = loss_fn(pred_t, labels_clean, validity)
                         out["total"].backward()
                         if args.grad_clip > 0:
@@ -465,7 +536,8 @@ def main() -> int:
                             )
                         optimizer.step()
                     last_loss = float(out["total"])
-                    n_trained += 1
+                    n_trained += len(train_buf)
+                    train_buf.clear()
 
         if di % 25 == 0:
             log_event({
