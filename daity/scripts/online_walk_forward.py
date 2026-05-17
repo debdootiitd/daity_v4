@@ -147,6 +147,12 @@ def parse_args() -> argparse.Namespace:
                     help="Skip the prediction forward pass for online_days strictly "
                          "before this date (YYYY-MM-DD). Training still happens. "
                          "Useful to skip GPU work during long pre-test warmup.")
+    ap.add_argument("--prefetch-workers", type=int, default=0,
+                    help="EXPERIMENTAL. If > 0, use N worker THREADS to prefetch samples. "
+                         "Currently disabled-by-default: GIL contention in CohortAssembler "
+                         "makes ThreadPool prefetch slower than synchronous (verified on A6000). "
+                         "TODO: convert to multiprocessing.Pool for true parallelism. "
+                         "Default 0 = synchronous.")
     # Optimizer
     ap.add_argument("--optimizer", choices=["adamw", "adagrad"], default="adagrad")
     ap.add_argument("--lr",            type=float, default=1e-3)
@@ -479,83 +485,133 @@ def main() -> int:
     last_loss = float("nan")
     bs = max(1, args.anchors_batch_size)
     predict_from = date.fromisoformat(args.predict_from_date) if args.predict_from_date else None
-    for di, d in enumerate(online_days):
+
+    # Optional prefetch: assemble (predict_sample, train_sample) for each (day, anchor)
+    # in worker threads. ThreadPoolExecutor.map() preserves order so Adagrad continuity
+    # is preserved. CohortAssembler caches per-symbol series; after warmup the cache is
+    # read-only so no locking is needed.
+    def _assemble_for(args_tuple):
+        di, ai, d, t_anchor = args_tuple
         train_day = _shift_trading_days(d, args.label_lag_trading_days, calendar)
-        do_predict = predict_from is None or d >= predict_from
-        # Iterate all anchors for this trading day
-        # Predictions are still per-anchor; training is batched in groups of `bs`.
-        train_buf: list[tuple] = []  # collected (train_sample, train_anchor_utc)
+        anchor_utc = _ist_to_utc(d, t_anchor)
+        do_pred = predict_from is None or d >= predict_from
+        pred_sample = assembler.assemble(anchor_utc) if do_pred else None
+        train_anchor_utc = (_ist_to_utc(train_day, t_anchor)
+                             if train_day is not None
+                             and train_day >= date.fromisoformat(args.online_start)
+                             else None)
+        train_sample = assembler.assemble(train_anchor_utc) if train_anchor_utc else None
+        return (di, ai, d, t_anchor, anchor_utc, train_anchor_utc, do_pred,
+                pred_sample, train_sample)
+
+    # Build job list (date, anchor) pairs in order
+    jobs = []
+    for di, d in enumerate(online_days):
         for ai, t_anchor in enumerate(anchor_times):
-            anchor_utc = _ist_to_utc(d, t_anchor)
-            # 1. Predict for (d, t_anchor) (no grad) -- skip during pre-test warmup
-            model.eval()
-            sample = assembler.assemble(anchor_utc) if do_predict else None
-            if sample is not None and do_predict:
-                with torch.no_grad(), torch.autocast(device_type=device, dtype=torch.bfloat16):
-                    pred = _unpack_pred(model(_sample_to_batch(sample, anchor_utc, device)))
-                pred_np = pred[0].float().cpu().numpy()
-                labels_np = sample.labels.cpu().numpy()
-                label_v_np = sample.label_validity_per_stock.cpu().numpy()
-                for i, sym in enumerate(sample.symbols):
-                    for h_idx in ACTIVE_HORIZON_INDICES:
-                        if not label_v_np[i, h_idx]:
-                            continue
-                        pred_rows.append({
-                            "date": d,
-                            "anchor_us": int(anchor_utc.timestamp() * 1_000_000),
-                            "stock": sym,
-                            "horizon": HORIZONS[h_idx].name,
-                            "pred_lr": float(pred_np[i, h_idx]),
-                            "real_lr": float(labels_np[i, h_idx]),
-                        })
-                n_predicted += 1
+            jobs.append((di, ai, d, t_anchor))
 
-            # 2. Train on (train_day, t_anchor) — accumulate `bs` anchors then step
-            if train_day is not None and train_day >= date.fromisoformat(args.online_start):
-                train_anchor_utc = _ist_to_utc(train_day, t_anchor)
-                train_sample = assembler.assemble(train_anchor_utc)
-                if train_sample is not None:
-                    # Same-N batching: only add to buf if it matches first sample's stock count.
-                    # (Cohort sizes can vary by 1-2 stocks per anchor due to data gaps.)
-                    if not train_buf or train_sample.labels.shape[0] == train_buf[0][0].labels.shape[0]:
-                        train_buf.append((train_sample, train_anchor_utc))
-                # Flush buffer when full or at the last anchor of the day
-                if len(train_buf) >= bs or (ai == len(anchor_times) - 1 and train_buf):
-                    t_batch = _stack_batch(train_buf, device)
-                    labels_clean, validity = _stack_labels_validity([s for s, _ in train_buf], device)
-                    model.train()
-                    for _step in range(args.steps_per_day):
-                        optimizer.zero_grad(set_to_none=True)
-                        with torch.autocast(device_type=device, dtype=torch.bfloat16):
-                            pred_t = _unpack_pred(model(t_batch))
-                            out = loss_fn(pred_t, labels_clean, validity)
-                        out["total"].backward()
-                        if args.grad_clip > 0:
-                            torch.nn.utils.clip_grad_norm_(
-                                model.parameters(), args.grad_clip,
-                            )
-                        optimizer.step()
-                    last_loss = float(out["total"])
-                    n_trained += len(train_buf)
-                    train_buf.clear()
+    # Pick iterator
+    if args.prefetch_workers > 0:
+        import concurrent.futures
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=args.prefetch_workers)
+        # Warmup the assembler series cache with the first sample so worker threads
+        # don't race on cache writes.
+        if jobs:
+            assembler.assemble(_ist_to_utc(jobs[0][2], jobs[0][3]))
+        sample_iter = executor.map(_assemble_for, jobs, chunksize=4)
+        print(f"prefetch enabled with {args.prefetch_workers} workers", flush=True)
+    else:
+        sample_iter = (_assemble_for(j) for j in jobs)
+        executor = None
 
-        if di % 25 == 0:
-            log_event({
-                "event": "online_day",
-                "day": str(d),
-                "n_anchors": len(anchor_times),
-                "train_loss": last_loss,
-                "n_predicted": n_predicted,
-                "n_trained": n_trained,
-            })
+    train_buf: list[tuple] = []
+    prev_di = -1
+    for (di, ai, d, t_anchor, anchor_utc, train_anchor_utc, do_predict,
+         sample, train_sample) in sample_iter:
+        # At day boundary: flush any pending train buffer (handles last anchors of previous day)
+        if di != prev_di and train_buf:
+            t_batch = _stack_batch(train_buf, device)
+            labels_clean, validity = _stack_labels_validity([s for s, _ in train_buf], device)
+            model.train()
+            optimizer.zero_grad(set_to_none=True)
+            with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                pred_t = _unpack_pred(model(t_batch))
+                out = loss_fn(pred_t, labels_clean, validity)
+            out["total"].backward()
+            if args.grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+            optimizer.step()
+            last_loss = float(out["total"])
+            n_trained += len(train_buf)
+            train_buf.clear()
+        prev_di = di
 
-        # 3. Periodic checkpoint (daily, regardless of anchor count)
-        if (di + 1) % args.ckpt_every == 0:
-            torch.save({
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "day": str(d), "day_idx": di + 1,
-            }, ckpt_dir / f"day_{d.isoformat()}.pt")
+        # 1. Predict for (d, t_anchor) (no grad) -- skip during pre-test warmup
+        model.eval()
+        if sample is not None and do_predict:
+            with torch.no_grad(), torch.autocast(device_type=device, dtype=torch.bfloat16):
+                pred = _unpack_pred(model(_sample_to_batch(sample, anchor_utc, device)))
+            pred_np = pred[0].float().cpu().numpy()
+            labels_np = sample.labels.cpu().numpy()
+            label_v_np = sample.label_validity_per_stock.cpu().numpy()
+            for i, sym in enumerate(sample.symbols):
+                for h_idx in ACTIVE_HORIZON_INDICES:
+                    if not label_v_np[i, h_idx]:
+                        continue
+                    pred_rows.append({
+                        "date": d,
+                        "anchor_us": int(anchor_utc.timestamp() * 1_000_000),
+                        "stock": sym,
+                        "horizon": HORIZONS[h_idx].name,
+                        "pred_lr": float(pred_np[i, h_idx]),
+                        "real_lr": float(labels_np[i, h_idx]),
+                    })
+            n_predicted += 1
+
+        # 2. Train on (train_day, t_anchor) — accumulate `bs` anchors then step
+        if train_sample is not None and train_anchor_utc is not None:
+            # Same-N batching: only add if matches first sample's stock count
+            if not train_buf or train_sample.labels.shape[0] == train_buf[0][0].labels.shape[0]:
+                train_buf.append((train_sample, train_anchor_utc))
+        # Flush buffer when full or at the last anchor of the day
+        if (len(train_buf) >= bs or (ai == len(anchor_times) - 1 and train_buf)):
+            t_batch = _stack_batch(train_buf, device)
+            labels_clean, validity = _stack_labels_validity([s for s, _ in train_buf], device)
+            model.train()
+            for _step in range(args.steps_per_day):
+                optimizer.zero_grad(set_to_none=True)
+                with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                    pred_t = _unpack_pred(model(t_batch))
+                    out = loss_fn(pred_t, labels_clean, validity)
+                out["total"].backward()
+                if args.grad_clip > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+                optimizer.step()
+            last_loss = float(out["total"])
+            n_trained += len(train_buf)
+            train_buf.clear()
+
+        # End-of-day actions: only when we just consumed the last anchor of the day
+        is_last_anchor_of_day = (ai == len(anchor_times) - 1)
+        if is_last_anchor_of_day:
+            if di % 25 == 0:
+                log_event({
+                    "event": "online_day",
+                    "day": str(d),
+                    "n_anchors": len(anchor_times),
+                    "train_loss": last_loss,
+                    "n_predicted": n_predicted,
+                    "n_trained": n_trained,
+                })
+            if (di + 1) % args.ckpt_every == 0:
+                torch.save({
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "day": str(d), "day_idx": di + 1,
+                }, ckpt_dir / f"day_{d.isoformat()}.pt")
+
+    if executor is not None:
+        executor.shutdown(wait=True)
 
     # Final ckpt + predictions parquet
     torch.save({
