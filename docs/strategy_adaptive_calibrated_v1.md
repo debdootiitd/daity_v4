@@ -1,9 +1,117 @@
 # Adaptive Calibrated Strategy — v1
 
-**Status:** Champion as of 2026-05-17  
+**Status:** **REVISED 2026-05-17 — earlier headline numbers retracted after independent
+review identified a critical lookahead bug. See §0 below.**
+
 **Test window:** 2025-02-01 to 2026-04-30 (303 trading days, NSE ~200-stock universe)  
-**Champion config:** K=2, N=10, holdout=3, GBM  
-**Result:** Sharpe 1.91 · +83.81 bps/day · +65% sleeve-adjusted return (14 months)
+**Best honest config:** K=1, N=10, holdout=3, GBM, at realistic 15 bps round-trip cost  
+**Honest result:** Sharpe **0.63** · +32.33 bps/day · **+20.67% sleeve-adjusted return** (14 months, ~17% annualized)
+
+The strategy still **beats baseline at all cost levels tested** (5/15/30 bps round-trip), but the
+margin is modest. Earlier "Sharpe 1.91 / +65% return" claims were inflated ~3–5× by a
+calendar-day / trading-day mismatch in the lookahead gate.
+
+## 0. Bug fix and corrected results (2026-05-17)
+
+### The bug
+
+`adaptive_calibrated_strategy.py:134` (now fixed) used `timedelta(days=realization_offset)`
+to compute the cutoff before which training rows' labels must be realized. But
+`realization_offset` is in **trading days** (e.g., 5 for `day_plus_5`), while
+`timedelta(days=5)` is **5 calendar days**. Every weekend creates a 2-day leak; holidays
+make it worse. The leak corrupted:
+
+1. The GBM training set (last ~2 anchors per test day had unrealized labels)
+2. The OOS-gate holdout window (same 2 anchors went into the held-out 3-day window)
+
+In other words, the very mechanism designed to be the OOS gate was contaminated.
+
+### The fix
+
+Use the data's distinct dates as the trading calendar; cap admitted anchors by **trading-day
+index**, not calendar-day delta:
+
+```python
+all_trading_dates = sorted(wide["date"].unique().to_list())
+td_idx = {td: i for i, td in enumerate(all_trading_dates)}
+...
+d_idx = td_idx.get(d)
+if d_idx is None or d_idx < realization_offset:
+    continue
+anchor_cap_realization = all_trading_dates[d_idx - realization_offset]
+train = valid.filter(pl.col("date") < anchor_cap_realization)
+```
+
+Sharpe annualization also corrected from `sqrt(252)` (treats overlapping 5-day positions
+as independent daily picks) to `sqrt(252 / realization_offset) ≈ 7.10` for d5.
+
+### Before vs after (K=2, N=10, holdout=3, cost=5 bps)
+
+| Metric | Before fix (claimed) | After fix (honest) | Inflation |
+|--------|----------------------:|--------------------:|----------:|
+| Sharpe | 1.91 | 0.56 | 3.4× |
+| Mean bps/day (all) | +83.81 | +20.66 | 4.1× |
+| Sleeve return (14mo) | +65.14% | +12.87% | 5.1× |
+| Trade rate | 62% | 59% | — |
+| Hit rate (traded) | 64% | 55% | — |
+
+### Honest K sweep (corrected gate, N=10, holdout=3, GBM, d5)
+
+**Cost = 5 bps (legacy / optimistic):**
+| K | Traded | Mean_all | Sharpe | Sleeve | Hit |
+|---|-------:|---------:|-------:|-------:|----:|
+| **1** ★ | 62% | +39.00 | +0.76 | **+25.64%** | 54% |
+| 2 | 59% | +20.66 | +0.56 | +12.87% | 55% |
+| 3 | 52% | +19.72 | +0.63 | +12.35% | 52% |
+| 5 | 49% | +10.79 | +0.40 | +6.52%  | 55% |
+
+**Cost = 15 bps (realistic NSE delivery):**
+| K | Traded | Mean_all | Sharpe | Sleeve | Hit |
+|---|-------:|---------:|-------:|-------:|----:|
+| **1** ★ | 62% | +32.33 | **+0.63** | **+20.67%** | 53% |
+| 2 | 58% | +13.86 | +0.38 | +8.32% | 53% |
+| 3 | 51% | +12.78 | +0.41 | +7.74% | 51% |
+| 5 | 48% | +5.46 | +0.21 | +3.14% | 54% |
+
+**Cost = 30 bps (conservative):**
+| K | Traded | Mean_all | Sharpe | Sleeve | Hit |
+|---|-------:|---------:|-------:|-------:|----:|
+| **1** ★ | 60% | +20.03 | +0.41 | +12.07% | 51% |
+| 2 | 57% | +8.27 | +0.23 | +4.72% | 52% |
+| 3 | 49% | +6.36 | +0.21 | +3.63% | 49% |
+| 5 | 47% | +0.95 | +0.04 | +0.36% | 53% |
+
+### Baseline comparison (top-K every day, no gate, corrected)
+
+| Strategy | Cost | Sharpe | Sleeve | Hit |
+|----------|-----:|-------:|-------:|----:|
+| Baseline K=2 | 5 bps | +0.22 | +6.14% | 49% |
+| Baseline K=2 | 15 bps | +0.02 | -0.08% | 47% |
+| Baseline K=2 | 30 bps | -0.27 | -8.74% | 45% |
+| Baseline K=7 | 5 bps | +0.55 | +13.50% | 53% |
+| Baseline K=7 | 15 bps | +0.30 | +6.85% | 51% |
+| Baseline K=7 | 30 bps | -0.08 | -2.40% | 49% |
+| **GBM K=1 (honest)** | **15 bps** | **+0.63** | **+20.67%** | **53%** |
+| **GBM K=1 (honest)** | **30 bps** | **+0.41** | **+12.07%** | **51%** |
+
+The GBM gate **still adds value over baseline at all cost levels** — at 15 bps, K=1 GBM
+posts Sharpe 0.63 vs baseline K=7's 0.30. The improvement is real, just not the 7×
+multiplier earlier claimed.
+
+### Other bugs identified by reviewers (not yet quantified)
+
+- **Contrastive pair mining uses realized future returns** to define positive pairs
+  (`cohort_pair_miner.py:154-204`, `mine_sector_alpha_pairs`). Encoder is label-conditioned.
+  Bounded by `train_end=2024-11-30` so not a direct OOS leak, but generalization
+  guarantees weaker than "pure self-supervised" framing implies.
+- **Cost model 5 bps round-trip optimistic for NSE delivery**: real ≈ STT 20 bps + ~5
+  exchange/GST + ~5–15 slippage + ~5 brokerage = **30–50 bps**. Recommended baseline:
+  15 bps minimum; 30 bps for conservative planning.
+- **P&L formula** averages log-returns then converts to simple return (small bias).
+- **Threshold-sweep retrain** retrains the final model on the same holdout window used
+  for threshold selection. Modest residual leakage; harder to quantify.
+
+---
 
 ---
 

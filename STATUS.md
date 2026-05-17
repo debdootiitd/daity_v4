@@ -110,40 +110,54 @@ First model to show positive OOS P&L on full 2025 test: +4.93 bps/day (day_plus_
 
 `dump_static_predictions.py` — runs frozen v11 ckpt over 2025-02-01 to 2026-04-30 (303 trading days). Output: `reports/v11_static_predictions_2025_2026.parquet` (64,880 rows; gitignored — keep locally). **This parquet is the only artifact needed for all downstream strategy work; GPU not required after this.**
 
-### Adaptive Calibrated Strategy — champion
+### Adaptive Calibrated Strategy — REVISED 2026-05-17 (post-review)
 
-Full documentation: `docs/strategy_adaptive_calibrated_v1.md`
+Full documentation: `docs/strategy_adaptive_calibrated_v1.md` (see §0 — bug fix log)
 
-Algorithm: For each day D, train a GBM classifier on last N=10 anchor dates (fit window) to predict the day_plus_5 win label (real_lr > 30 bps). Evaluate 5 probability thresholds (0.45–0.65) on a held-out window (last 3 days, OOS). Gate: only trade if any threshold shows positive held-out P&L. Final model: retrain on all N+holdout days, pick top-K=2 stocks by win probability.
+**Earlier "Sharpe 1.91, +65% sleeve" champion claim was retracted after independent
+two-reviewer adversarial review identified a critical lookahead bug:**
+`anchor_cap_realization = d - timedelta(days=5)` used 5 CALENDAR days for a 5
+TRADING day horizon → weekends/holidays let unrealized day_plus_5 labels into both
+the GBM training set and the OOS-gate holdout window. The gate itself was leaky.
 
-**Champion config: K=2, N=10, holdout=3, GBM (sklearn GradientBoostingClassifier)**
+Fix committed: trading-day index-based cap. Sharpe annualization also corrected
+from `sqrt(252)` to `sqrt(252/hold_days)` for overlapping 5-day positions.
 
-Results on Feb'25–Apr'26 (303 test days, NSE ~200 stocks):
+**Honest results after fix (K=1, N=10, holdout=3, GBM, day_plus_5, 303 days):**
 
-| Metric | Value |
-|--------|-------|
-| Mean P&L (all days) | +83.81 bps/day |
-| Sharpe (5-day hold) | 1.91 |
-| Sleeve return (14 months) | **+65.14%** (~56% annualized) |
-| Trade frequency | 62% of days |
-| Hit rate (traded days) | 64% |
-| Mean on traded days | +135.80 bps |
-| Baseline (K=7, no gate) | +14.65 bps/day, Sharpe 0.56, +9% sleeve |
+| Cost (round-trip) | Sharpe | Sleeve (14mo) | Mean bps/day | Trade% | Hit% |
+|-------------------|-------:|--------------:|-------------:|-------:|-----:|
+| 5 bps (optimistic) | +0.76 | +25.64% | +39.00 | 62% | 54% |
+| 15 bps (realistic) | **+0.63** | **+20.67%** | +32.33 | 62% | 53% |
+| 30 bps (conservative) | +0.41 | +12.07% | +20.03 | 60% | 51% |
+
+Best honest config: **K=1 (not K=2)**. At realistic 15 bps cost, the GBM gate beats
+all baselines (baseline K=7 at 15 bps: Sharpe 0.30, sleeve +6.85%). Improvement
+over baseline is real but ~3× (not 7×).
 
 Capital accounting: 5-day hold + daily entry = 5 overlapping sleeves; return = `prod(1 + bps/10000/5) - 1`. No leverage.
 
 **Key experiments completed:**
 - Calibrator sweep: GBM > LR > RF (all with holdout=3 gate)
-- Critical bug fixed: threshold evaluation must be on held-out days (OOS), not the same days used to train the GBM (in-sample gave inflated 84% trade rate; corrected drops to 62%)
-- K sweep (K=1..10): K=2 wins on Sharpe; K=1 marginally higher sleeve (+67%) but lower hit rate
-- N sweep (N=5..30): N=10 unambiguous winner
-- Holdout sensitivity: holdout=3 best at K=2; holdout=5 better only at K=3
+- First bug fixed earlier: threshold evaluation must be on held-out days (OOS), not the same days used to train the GBM
+- Second bug fixed 2026-05-17 (this commit): trading-day vs calendar-day mismatch in `anchor_cap_realization`. This was the bigger leak — inflated headline Sharpe by ~3.4× and sleeve return by ~5×.
+- K sweep (K=1..5) re-run honest: K=1 emerges as best (was K=2 pre-fix)
+- Cost sensitivity: at 30 bps round-trip K=1 still posts +12% sleeve (vs baseline -2%)
+
+**Outstanding reviewer concerns (not yet fixed):**
+- Contrastive pair mining (`cohort_pair_miner.mine_sector_alpha_pairs`) uses realized
+  future returns to define positive pairs. Bounded by train_end so not a direct OOS
+  leak, but encoder is label-conditioned. Generalization claim weaker than originally
+  stated.
+- Threshold-sweep retrain step uses holdout window — small residual leakage.
 
 **GPU shutdown checklist:**
 - [x] `reports/v11_static_predictions_2025_2026.parquet` pulled to local disk
-- [x] Champion checkpoint at `runs/cohort_modeA_v11_from_contrastive/` (on remote; back up if needed)
-- [x] All code committed to git (this commit)
+- [x] Champion checkpoint at `runs/cohort_modeA_v11_from_contrastive/` pulled local
+- [x] Contrastive pretrain ckpt + pair dataset pulled local
+- [x] All code (including bug fixes) committed to git
 - [x] Strategy runs fully on CPU — no GPU dependency for Stage 4
+- [x] Independent two-reviewer audit completed; remaining bugs documented above
 
 ### Phase 2.1 patch (post-review #1)
 

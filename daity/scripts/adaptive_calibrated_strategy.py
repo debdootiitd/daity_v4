@@ -121,6 +121,12 @@ def run_one_N(
       - Gate: only trade if any threshold yields positive mean held-out P&L.
       - Final model for D+1: retrain on all N days.
     This prevents in-sample threshold selection that inflates the trade rate.
+
+    realization_offset is in TRADING days (per HORIZON_REALIZATION_TRADING_DAYS).
+    We use the data's distinct dates as the trading calendar — for a test day
+    D at index i, only anchors with index < (i - realization_offset) are
+    admitted to the training set, guaranteeing their labels have realized
+    strictly before D's anchor time.
     """
     label_col = f"real_{target_horizon}"
     pred_col  = f"pred_{target_horizon}"
@@ -130,8 +136,17 @@ def run_one_N(
     valid = wide.filter(pl.col(label_col).is_not_null()
                         & pl.col(pred_col).is_not_null())
 
+    # Trading calendar derived from the data (each distinct date == a trading day)
+    all_trading_dates = sorted(wide["date"].unique().to_list())
+    td_idx = {td: i for i, td in enumerate(all_trading_dates)}
+
     for d in test_dates:
-        anchor_cap_realization = d - timedelta(days=realization_offset)
+        d_idx = td_idx.get(d)
+        if d_idx is None or d_idx < realization_offset:
+            continue
+        # Cap in TRADING days, not calendar days. Anchors with date < cap
+        # have labels realized strictly before D.
+        anchor_cap_realization = all_trading_dates[d_idx - realization_offset]
         train = valid.filter(pl.col("date") < anchor_cap_realization)
         if train.shape[0] < 100:
             continue
@@ -329,9 +344,14 @@ def main() -> int:
         if traded.shape[0] > 0:
             tb = traded["today_pnl_bps"]
             sd = float(tb.std()) or 1e-9
-            sharpe_traded = float(tb.mean()) / sd * np.sqrt(252)
+            # Annualize by independent-hold count (252 / hold_days), not 252.
+            # day_plus_5 hold = 5 trading days -> sqrt(50.4). Using sqrt(252)
+            # treats overlapping 5-day positions as independent daily picks,
+            # which inflates Sharpe by ~sqrt(hold_days) (~2.24x for d5).
+            ann_factor = float(np.sqrt(252.0 / max(1, realization_offset)))
+            sharpe_traded = float(tb.mean()) / sd * ann_factor
             ab = out["today_pnl_bps"]
-            sharpe_all = float(ab.mean()) / (float(ab.std()) or 1e-9) * np.sqrt(252)
+            sharpe_all = float(ab.mean()) / (float(ab.std()) or 1e-9) * ann_factor
             summary_rows.append({
                 "N": N,
                 "test_days": out.shape[0],
