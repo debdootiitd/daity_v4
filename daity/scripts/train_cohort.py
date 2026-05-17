@@ -210,6 +210,18 @@ def main() -> int:
         # pretrain_contrastive.py (which provides an encoder-only view with
         # the "stock_encoder.*" prefix already applied).
         m_sd = sd.get("cohort_init_state_dict", sd.get("model_state_dict", sd))
+        # Drop tensors whose shape doesn't match — common when the pretrain
+        # universe was a subset of the cohort-train universe (e.g. stock_embed).
+        cur = model.state_dict()
+        dropped = []
+        for k in list(m_sd.keys()):
+            if k in cur and m_sd[k].shape != cur[k].shape:
+                dropped.append((k, tuple(m_sd[k].shape), tuple(cur[k].shape)))
+                del m_sd[k]
+        if dropped:
+            print(f"  dropping {len(dropped)} mismatched-shape tensors:", flush=True)
+            for k, src, dst in dropped:
+                print(f"    {k}: ckpt={src} model={dst}", flush=True)
         missing, unexpected = model.load_state_dict(m_sd, strict=False)
         print(f"  loaded | missing={len(missing)} unexpected={len(unexpected)}", flush=True)
 

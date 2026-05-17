@@ -43,6 +43,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--cache-root", type=Path, default=Path("data/cache"))
     ap.add_argument("--feature-root", type=Path, default=Path("data/features_parquet"))
     ap.add_argument("--universe-end", type=str, default="2024-12-31")
+    ap.add_argument("--universe-source", choices=["all", "alive_in_range"], default="all",
+                    help="all = use all symbols in SymbolMaster (match train_cohort); alive_in_range filters by ts.")
     ap.add_argument("--start", type=str, required=True)
     ap.add_argument("--end",   type=str, required=True)
     ap.add_argument("--anchor-ist", type=str, default="15:25")
@@ -64,21 +66,25 @@ def main() -> int:
 
     master = SymbolMaster.from_cache(args.cache_root)
     all_syms = sorted(master.frame["symbol"].to_list())
-    univ_end = datetime.fromisoformat(args.universe_end).replace(tzinfo=UTC)
-    t_start = datetime(2019, 1, 1, tzinfo=UTC)
-    day_root = args.feature_root / "day"
-    alive = []
-    for s in all_syms:
-        try:
-            df = pl.read_parquet(day_root / f"{s}.parquet", columns=["ts"])
-        except Exception:
-            continue
-        if df.height == 0:
-            continue
-        ts = df["ts"]
-        if (ts >= t_start).any() and (ts <= univ_end).any():
-            alive.append(s)
-    universe = tuple(alive)
+    if args.universe_source == "all":
+        universe = tuple(all_syms)
+    else:
+        univ_end = datetime.fromisoformat(args.universe_end).replace(tzinfo=UTC)
+        t_start = datetime(2019, 1, 1, tzinfo=UTC)
+        day_root = args.feature_root / "day"
+        alive = []
+        for s in all_syms:
+            try:
+                df = pl.read_parquet(day_root / f"{s}.parquet", columns=["ts"])
+            except Exception:
+                continue
+            if df.height == 0:
+                continue
+            ts = df["ts"]
+            if (ts >= t_start).any() and (ts <= univ_end).any():
+                alive.append(s)
+        universe = tuple(alive)
+    print(f"universe size: {len(universe)} (source={args.universe_source})", flush=True)
     all_sectors = sorted({
         (master.lookup(s) or {}).get("macro_sector") or "Unknown"
         for s in all_syms
@@ -130,6 +136,19 @@ def main() -> int:
         cross_n_heads=args.n_heads,
         n_regime_feats=N_REGIME_FEATS,
     ).to(device).eval()
+    # Drop tensors whose shape doesn't match — happens when ckpt was trained
+    # on a slightly different universe size (e.g., universe-source all = 205
+    # vs alive-in-range filter = 200).
+    cur_sd = model.state_dict()
+    dropped = []
+    for k in list(m_sd.keys()):
+        if k in cur_sd and m_sd[k].shape != cur_sd[k].shape:
+            dropped.append((k, tuple(m_sd[k].shape), tuple(cur_sd[k].shape)))
+            del m_sd[k]
+    if dropped:
+        print(f"dropping {len(dropped)} mismatched-shape tensors:", flush=True)
+        for k, src, dst in dropped:
+            print(f"  {k}: ckpt={src} model={dst}", flush=True)
     missing, unexpected = model.load_state_dict(m_sd, strict=False)
     print(f"loaded {args.ckpt} | missing={len(missing)} unexpected={len(unexpected)}", flush=True)
 
