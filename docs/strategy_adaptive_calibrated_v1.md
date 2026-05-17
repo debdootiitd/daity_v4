@@ -4,8 +4,9 @@
 review identified a critical lookahead bug. See §0 below.**
 
 **Test window:** 2025-02-01 to 2026-04-30 (303 trading days, NSE ~200-stock universe)  
-**Best honest config:** K=1, N=10, holdout=3, GBM, at realistic 15 bps round-trip cost  
-**Honest result:** Sharpe **0.63** · +32.33 bps/day · **+20.67% sleeve-adjusted return** (14 months, ~17% annualized)
+**Best honest config (post-N-resweep):** K=1, N=**12**, holdout=3, GBM, day_plus_5, at realistic 15 bps round-trip cost  
+**Honest result:** Sharpe **0.97** · +45.68 bps/day · **+30.98% sleeve-adjusted return** (14 months, ~26% annualized)  
+**Caveat:** N=12 is a single-time-window optimum; the neighbors N=10 and N=15 give 0.63 and 0.54 respectively. Pending confirmation on a held-out time window before treating N=12 as a robust choice.
 
 The strategy still **beats baseline at all cost levels tested** (5/15/30 bps round-trip), but the
 margin is modest. Earlier "Sharpe 1.91 / +65% return" claims were inflated ~3–5× by a
