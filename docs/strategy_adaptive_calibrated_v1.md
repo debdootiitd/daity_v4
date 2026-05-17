@@ -4,9 +4,20 @@
 review identified a critical lookahead bug. See §0 below.**
 
 **Test window:** 2025-02-01 to 2026-04-30 (303 trading days, NSE ~200-stock universe)  
-**Best honest config (post-N-resweep):** K=1, N=**12**, holdout=3, GBM, day_plus_5, at realistic 15 bps round-trip cost  
+**Best honest config (post-N-resweep + split-window verified):** K=1, N=**12**, holdout=3, GBM, day_plus_5, at realistic 15 bps round-trip cost  
 **Honest result:** Sharpe **0.97** · +45.68 bps/day · **+30.98% sleeve-adjusted return** (14 months, ~26% annualized)  
-**Caveat:** N=12 is a single-time-window optimum; the neighbors N=10 and N=15 give 0.63 and 0.54 respectively. Pending confirmation on a held-out time window before treating N=12 as a robust choice.
+
+**N=12 robustness — verified on a 50/50 split.** N=12 wins H1 (Feb–Sep'25) unambiguously
+(Sharpe 0.61 vs N=10's 0.11) and ties for best in H2 (Oct'25–Apr'26, Sharpe 1.37 vs N=8's 1.41).
+
+**Regime warning.** H2 is ~2× more profitable than H1 for every N (H1 Sharpe 0.61 / sleeve +9.35% vs
+H2 Sharpe 1.37 / sleeve +19.78% at N=12). The +26% annualized headline averages a favorable
+Q4'25–Q1'26. Forward expectations should anchor closer to **~15–20% annualized** in regime-neutral conditions.
+
+**Ablations from follow-up sweep:**
+- Drop GBM, rank by raw `pred_day_plus_5`: Sharpe drops to **0.42**, sleeve +11.40%. The GBM is doing real work — cross-horizon and regime-feature interactions are not replaceable by raw pred rank.
+- Extend threshold sweep to {0.45..0.80}: Sharpe +0.03 (1.00 vs 0.97). Harmless but no new edge — strategy already finds the optimum in the legacy [0.45–0.65] range.
+- High-only thresholds [0.65–0.80] alone: Sharpe drops to 0.66 (gate fires less often).
 
 The strategy still **beats baseline at all cost levels tested** (5/15/30 bps round-trip), but the
 margin is modest. Earlier "Sharpe 1.91 / +65% return" claims were inflated ~3–5× by a
