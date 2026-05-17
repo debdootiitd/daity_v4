@@ -90,6 +90,7 @@ class StratResult:
     n_lookback_trades: int
     n_today_trades: int
     today_pnl_bps: float
+    chosen_stocks: str = ""  # comma-separated list of stock symbols (empty if sit-out)
 
 
 def _make_clf(clf_type: str):
@@ -256,9 +257,11 @@ def run_one_N(
         orig_idx = np.where(mask)[0][top_idx]
         chosen_real_today = today_rows[label_col].to_numpy()[orig_idx].mean()
         today_bps = (np.exp(chosen_real_today) - 1.0) * 10000.0 - cost_bps
+        chosen_syms = today_rows["stock"].to_numpy()[orig_idx].tolist()
         results.append(StratResult(d, N_lookback, best_thr, best_lookback_pnl,
                                    best_lookback_sharpe, best_n_trades,
-                                   int(top_K), float(today_bps)))
+                                   int(top_K), float(today_bps),
+                                   ",".join(chosen_syms)))
     return results
 
 
@@ -337,6 +340,7 @@ def main() -> int:
             "n_lookback_trades": r.n_lookback_trades,
             "n_today_trades":    r.n_today_trades,
             "today_pnl_bps":     r.today_pnl_bps,
+            "chosen_stocks":     r.chosen_stocks,
         } for r in results])
         out.write_parquet(args.out_prefix.with_name(f"{args.out_prefix.name}_N{N}.parquet"))
 

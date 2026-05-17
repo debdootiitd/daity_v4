@@ -26,6 +26,8 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pnl-path", type=Path, required=True,
                     help="Per-day P&L parquet from adaptive_calibrated_strategy.py")
+    ap.add_argument("--pnl-column", type=str, default="today_pnl_bps",
+                    help="Column name to read as daily P&L (e.g. today_pnl_bps_stop for stop-loss adjusted)")
     ap.add_argument("--project", type=str, default="daity_phase25_rerun")
     ap.add_argument("--run-name", type=str, required=True)
     ap.add_argument("--cost-bps", type=float, default=15.0)
@@ -48,7 +50,11 @@ def main() -> int:
     print(f"loaded {n} rows from {args.pnl_path}", flush=True)
     print(f"columns: {df.columns}", flush=True)
 
-    bps = df["today_pnl_bps"].to_numpy()
+    if args.pnl_column not in df.columns:
+        print(f"ERROR: column '{args.pnl_column}' not in parquet. "
+              f"Available: {df.columns}", file=sys.stderr)
+        return 1
+    bps = df[args.pnl_column].to_numpy()
     nt = df["n_today_trades"].to_numpy()
     dates = df["test_date"].to_list()
     thresh = df["chosen_threshold"].to_list() if "chosen_threshold" in df.columns else [None] * n
