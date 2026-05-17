@@ -164,6 +164,13 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--w-bias",         type=float, default=0.01)
     ap.add_argument("--smooth-l1-beta", type=float, default=0.005)
     ap.add_argument("--rank-top-k",     type=int,   default=20)
+    # Win-rate classifier head ablation
+    ap.add_argument("--use-classifier-head", action="store_true",
+                    help="Add per-horizon win-rate classifier head to the model")
+    ap.add_argument("--w-clf", type=float, default=0.0,
+                    help="Loss weight for classifier BCE term")
+    ap.add_argument("--clf-threshold-bps", type=float, default=30.0,
+                    help="Win threshold (bps) for classifier label")
     # Model arch (must match seed ckpt)
     ap.add_argument("--d-model",          type=int, default=480)
     ap.add_argument("--stock-enc-layers", type=int, default=1)
@@ -234,6 +241,7 @@ def _build_model(args, n_stocks: int, n_sectors: int, device: str) -> CohortMode
         market_n_heads=args.n_heads,
         cross_n_heads=args.n_heads,
         n_regime_feats=N_REGIME_FEATS,
+        enable_classifier_head=getattr(args, "use_classifier_head", False),
     ).to(device)
 
 
@@ -302,6 +310,15 @@ def _unpack_pred(model_out) -> torch.Tensor:
     if isinstance(model_out, tuple):
         return model_out[0]
     return model_out
+
+
+def _unpack_pred_and_clf(model_out):
+    """Return (pred, clf_logits or None). pred is regression (B, N, H)."""
+    if isinstance(model_out, dict):
+        return model_out["pred"], model_out.get("clf_logits")
+    if isinstance(model_out, tuple):
+        return model_out[0], None
+    return model_out, None
 
 
 def _shift_trading_days(d: date, n: int, cal: NSECalendar) -> date | None:
@@ -389,6 +406,8 @@ def main() -> int:
     loss_fn = CohortLoss(
         w_reg=args.w_reg, w_rank=args.w_rank, w_bias=args.w_bias,
         smooth_l1_beta=args.smooth_l1_beta, rank_top_k=args.rank_top_k,
+        w_clf=args.w_clf if args.use_classifier_head else 0.0,
+        clf_threshold_bps=args.clf_threshold_bps,
     )
 
     wandb_run = None
@@ -535,8 +554,9 @@ def main() -> int:
             model.train()
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device, dtype=torch.bfloat16):
-                pred_t = _unpack_pred(model(t_batch))
-                out = loss_fn(pred_t, labels_clean, validity)
+                raw_t = model(t_batch)
+                pred_t, clf_t = _unpack_pred_and_clf(raw_t)
+                out = loss_fn(pred_t, labels_clean, validity, clf_logits=clf_t)
             out["total"].backward()
             if args.grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
@@ -550,22 +570,28 @@ def main() -> int:
         model.eval()
         if sample is not None and do_predict:
             with torch.no_grad(), torch.autocast(device_type=device, dtype=torch.bfloat16):
-                pred = _unpack_pred(model(_sample_to_batch(sample, anchor_utc, device)))
+                raw_p = model(_sample_to_batch(sample, anchor_utc, device))
+                pred, clf_logits_p = _unpack_pred_and_clf(raw_p)
             pred_np = pred[0].float().cpu().numpy()
+            clf_prob_np = (torch.sigmoid(clf_logits_p[0]).float().cpu().numpy()
+                           if clf_logits_p is not None else None)
             labels_np = sample.labels.cpu().numpy()
             label_v_np = sample.label_validity_per_stock.cpu().numpy()
             for i, sym in enumerate(sample.symbols):
                 for h_idx in ACTIVE_HORIZON_INDICES:
                     if not label_v_np[i, h_idx]:
                         continue
-                    pred_rows.append({
+                    row = {
                         "date": d,
                         "anchor_us": int(anchor_utc.timestamp() * 1_000_000),
                         "stock": sym,
                         "horizon": HORIZONS[h_idx].name,
                         "pred_lr": float(pred_np[i, h_idx]),
                         "real_lr": float(labels_np[i, h_idx]),
-                    })
+                    }
+                    if clf_prob_np is not None:
+                        row["pred_win_prob"] = float(clf_prob_np[i, h_idx])
+                    pred_rows.append(row)
             n_predicted += 1
 
         # 2. Train on (train_day, t_anchor) — accumulate `bs` anchors then step
@@ -581,8 +607,9 @@ def main() -> int:
             for _step in range(args.steps_per_day):
                 optimizer.zero_grad(set_to_none=True)
                 with torch.autocast(device_type=device, dtype=torch.bfloat16):
-                    pred_t = _unpack_pred(model(t_batch))
-                    out = loss_fn(pred_t, labels_clean, validity)
+                    raw_t = model(t_batch)
+                    pred_t, clf_t = _unpack_pred_and_clf(raw_t)
+                    out = loss_fn(pred_t, labels_clean, validity, clf_logits=clf_t)
                 out["total"].backward()
                 if args.grad_clip > 0:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
