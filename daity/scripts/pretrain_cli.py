@@ -126,9 +126,16 @@ def _build_pretrain_config(yaml_cfg: dict, overrides: dict) -> PretrainConfig:
                    "Without this flag, dirty checkouts hard-fail to enforce "
                    "the CLAUDE.md §6 reproducibility-tag requirement on the "
                    "trained checkpoint (git_sha, config_hash, as_of).")
+@click.option("--lr", type=float, default=None, help="Override lr (peak LR).")
+@click.option("--log-dir", type=click.Path(path_type=Path), default=None,
+              help="Override log_dir (used by LR sweep to give each run its own dir).")
+@click.option("--wandb-run-name", default=None,
+              help="Override wandb_run_name (for LR sweep tagging).")
 def main(config_path: Path, smoke: bool, max_steps: int | None, d_model: int | None,  # noqa: PLR0915
          n_layers: int | None, batch_size: int | None, device: str | None,
-         precision: str | None, symbols: str | None, allow_dirty: bool) -> None:
+         precision: str | None, symbols: str | None, allow_dirty: bool,
+         lr: float | None, log_dir: Path | None,
+         wandb_run_name: str | None) -> None:
     """Phase 2 SSL pretraining."""
     if not config_path.exists():
         raise click.UsageError(f"Config not found: {config_path}")
@@ -162,6 +169,12 @@ def main(config_path: Path, smoke: bool, max_steps: int | None, d_model: int | N
         overrides["device"] = device
     if precision is not None:
         overrides["precision"] = precision
+    if lr is not None:
+        overrides["lr"] = lr
+    if log_dir is not None:
+        overrides["log_dir"] = str(log_dir)
+    if wandb_run_name is not None:
+        overrides["wandb_run_name"] = wandb_run_name
 
     merged = {**yaml_cfg, **overrides}
     pretrain_cfg = _build_pretrain_config(yaml_cfg, overrides)
@@ -317,6 +330,44 @@ def main(config_path: Path, smoke: bool, max_steps: int | None, d_model: int | N
     # batches → forecast head explodes if unclipped). Default 0.0 = no
     # clipping (preserves v1/v2 behavior). Production runs with log-return
     # targets should set this to 1.0 (canonical).
+    # Loggers — CSVLogger always on as a local fallback. WandbLogger
+    # additionally if the config sets `wandb_project` (Phase 2.5+).
+    csv_logger = L.pytorch.loggers.CSVLogger(save_dir=str(log_dir))
+    loggers: list = [csv_logger]
+    wandb_project = merged.get("wandb_project")
+    if wandb_project:
+        try:
+            from lightning.pytorch.loggers import WandbLogger
+            wandb_run_name = merged.get("wandb_run_name") or log_dir.name
+            wandb_offline = bool(merged.get("wandb_offline", False))
+            wandb_tags = merged.get("wandb_tags", [])
+            wb = WandbLogger(
+                project=wandb_project,
+                name=wandb_run_name,
+                save_dir=str(log_dir),
+                offline=wandb_offline,
+                tags=list(wandb_tags) if wandb_tags else None,
+            )
+            wb.log_hyperparams({
+                "config_hash": provenance.config_hash,
+                "git_sha": provenance.git_sha,
+                "git_dirty": provenance.git_dirty,
+                "n_universe_symbols": len(universe),
+                "train_end": str(train_end.date()),
+                "val_start": str(val_start.date()),
+                "val_end": str(val_end.date()),
+            })
+            loggers.append(wb)
+            console.print(
+                f"[bold]W&B:[/bold] project={wandb_project} run={wandb_run_name} "
+                f"offline={wandb_offline}"
+            )
+        except Exception as e:
+            console.print(
+                f"[yellow]Warning:[/yellow] WandbLogger init failed ({e}); "
+                "continuing with CSV only."
+            )
+
     grad_clip = float(merged.get("gradient_clip_val", 0.0))
     trainer_kwargs: dict = {
         "max_steps": pretrain_cfg.max_steps,
@@ -327,7 +378,7 @@ def main(config_path: Path, smoke: bool, max_steps: int | None, d_model: int | N
         "limit_val_batches": merged.get("limit_val_batches", 50),
         "log_every_n_steps": 10,
         "default_root_dir": log_dir,
-        "logger": L.pytorch.loggers.CSVLogger(save_dir=str(log_dir)),
+        "logger": loggers,
         "callbacks": [checkpoint_cb, ema_cb],
         "enable_progress_bar": True,
     }

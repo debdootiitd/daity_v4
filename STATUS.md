@@ -90,6 +90,75 @@ Test count: **392 passing** total (262 from Phase 1 + 117 unit tests for the Pha
 2. Pull the best checkpoint + logs back; rerun the writeup with the trained checkpoint to populate the post-training plots.
 3. Spawn Phase 2 reviewer #2 against the trained checkpoint + Phase 2.1 patch (verifying review #1's must-land-before-launch findings are properly addressed).
 
+## Phase 2.5 — Cohort model + adaptive strategy (research track, outside formal phase gates)
+
+**Completed 2026-05-16/17 on Vast.ai H200 instance. GPU instance can now be shut down.**
+
+### Cohort model architecture (daity/models/cohort/)
+
+Four-component pipeline: `StockContextEncoder` → `MarketContextTransformer` → cross-attention → multi-horizon head. Predicts 10 horizons (30m/60m/120m/180m intraday, to_close, overnight, next_day_1h, next_day_eod, day_plus_3, day_plus_5).
+
+Training stages:
+1. **Contrastive pretrain** (`pretrain_contrastive.py`): Two-tower InfoNCE on NSE stock pairs 2019–2024. τ=0.1, 4K steps, ~2h on H200. Encoder init for downstream.
+2. **Walk-forward Mode A fine-tune** (`train_cohort.py`): Regression+rank loss, 2019→2025, cohort batches of ~200 stocks. Init from contrastive pretrained encoder.
+3. **Walk-forward Modes B+C** (experimental): short-window and ranking-only variants.
+
+Champion checkpoint: `runs/cohort_modeA_v11_from_contrastive/`  
+First model to show positive OOS P&L on full 2025 test: +4.93 bps/day (day_plus_5, K=10, 5 bps cost, Sharpe 0.29).
+
+### Static prediction dump
+
+`dump_static_predictions.py` — runs frozen v11 ckpt over 2025-02-01 to 2026-04-30 (303 trading days). Output: `reports/v11_static_predictions_2025_2026.parquet` (64,880 rows; gitignored — keep locally). **This parquet is the only artifact needed for all downstream strategy work; GPU not required after this.**
+
+### Adaptive Calibrated Strategy — REVISED 2026-05-17 (post-review)
+
+Full documentation: `docs/strategy_adaptive_calibrated_v1.md` (see §0 — bug fix log)
+
+**Earlier "Sharpe 1.91, +65% sleeve" champion claim was retracted after independent
+two-reviewer adversarial review identified a critical lookahead bug:**
+`anchor_cap_realization = d - timedelta(days=5)` used 5 CALENDAR days for a 5
+TRADING day horizon → weekends/holidays let unrealized day_plus_5 labels into both
+the GBM training set and the OOS-gate holdout window. The gate itself was leaky.
+
+Fix committed: trading-day index-based cap. Sharpe annualization also corrected
+from `sqrt(252)` to `sqrt(252/hold_days)` for overlapping 5-day positions.
+
+**Honest results after fix (K=1, N=10, holdout=3, GBM, day_plus_5, 303 days):**
+
+| Cost (round-trip) | Sharpe | Sleeve (14mo) | Mean bps/day | Trade% | Hit% |
+|-------------------|-------:|--------------:|-------------:|-------:|-----:|
+| 5 bps (optimistic) | +0.76 | +25.64% | +39.00 | 62% | 54% |
+| 15 bps (realistic) | **+0.63** | **+20.67%** | +32.33 | 62% | 53% |
+| 30 bps (conservative) | +0.41 | +12.07% | +20.03 | 60% | 51% |
+
+Best honest config: **K=1 (not K=2)**. At realistic 15 bps cost, the GBM gate beats
+all baselines (baseline K=7 at 15 bps: Sharpe 0.30, sleeve +6.85%). Improvement
+over baseline is real but ~3× (not 7×).
+
+Capital accounting: 5-day hold + daily entry = 5 overlapping sleeves; return = `prod(1 + bps/10000/5) - 1`. No leverage.
+
+**Key experiments completed:**
+- Calibrator sweep: GBM > LR > RF (all with holdout=3 gate)
+- First bug fixed earlier: threshold evaluation must be on held-out days (OOS), not the same days used to train the GBM
+- Second bug fixed 2026-05-17 (this commit): trading-day vs calendar-day mismatch in `anchor_cap_realization`. This was the bigger leak — inflated headline Sharpe by ~3.4× and sleeve return by ~5×.
+- K sweep (K=1..5) re-run honest: K=1 emerges as best (was K=2 pre-fix)
+- Cost sensitivity: at 30 bps round-trip K=1 still posts +12% sleeve (vs baseline -2%)
+
+**Outstanding reviewer concerns (not yet fixed):**
+- Contrastive pair mining (`cohort_pair_miner.mine_sector_alpha_pairs`) uses realized
+  future returns to define positive pairs. Bounded by train_end so not a direct OOS
+  leak, but encoder is label-conditioned. Generalization claim weaker than originally
+  stated.
+- Threshold-sweep retrain step uses holdout window — small residual leakage.
+
+**GPU shutdown checklist:**
+- [x] `reports/v11_static_predictions_2025_2026.parquet` pulled to local disk
+- [x] Champion checkpoint at `runs/cohort_modeA_v11_from_contrastive/` pulled local
+- [x] Contrastive pretrain ckpt + pair dataset pulled local
+- [x] All code (including bug fixes) committed to git
+- [x] Strategy runs fully on CPU — no GPU dependency for Stage 4
+- [x] Independent two-reviewer audit completed; remaining bugs documented above
+
 ### Phase 2.1 patch (post-review #1)
 
 Reviewer #1 (`reports/reviews/phase_2_review.md`, 2026-05-10) verdict: **Block** with 1 Critical + 6 Major + 9 Minor + 4 Nit.  Critical and 4 of the 6 Majors required to land before the H200 launch. Status of those:

@@ -199,8 +199,13 @@ class CrossSectionTradeableHead(nn.Module):
             nn.GELU(),
             nn.Linear(128, 2 * d_model),
         )
-        # Init the FiLM output near zero so we start at "no modulation".
-        nn.init.zeros_(self.film_mlp[-1].weight)
+        # Phase 2.5 fix: previously this was zero-initialized so FiLM had
+        # zero effect at init (γ=0, β=0 → output = input). That caused the
+        # head to produce near-identical scores across all stocks at init,
+        # which empirically never fully dissipated during training (score
+        # collapse: top-1 scores cluster in [0.20, 0.28] band post-train).
+        # Initializing with std=0.02 lets FiLM break symmetry from step 0.
+        nn.init.normal_(self.film_mlp[-1].weight, std=0.02)
         nn.init.zeros_(self.film_mlp[-1].bias)
 
         # Learned CLS market token.
@@ -214,7 +219,11 @@ class CrossSectionTradeableHead(nn.Module):
 
         self.final_norm = nn.LayerNorm(d_model)
         self.classifier = nn.Linear(d_model, N_CLASSES)
-        # Init classifier small so we start near uniform predictions.
+        # Phase 2.5 fix: previously classifier was init small (std=0.02) but
+        # paired with zero-init FiLM, producing tightly clustered scores.
+        # Keep std=0.02 since classifier itself isn't the dominant issue —
+        # the upstream FiLM zero-init was. Aux heads stay zero-init
+        # (they're regularizers, not score producers).
         nn.init.normal_(self.classifier.weight, std=0.02)
         nn.init.zeros_(self.classifier.bias)
         # CLS aux head: 1-dim regression to cross-section mean signed return.

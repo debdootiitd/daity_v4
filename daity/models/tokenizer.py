@@ -101,14 +101,26 @@ class MultiResTokenizer(nn.Module):
     For each scale:
       1. RevIN-normalize (per-(B, scale, channel) instance).
       2. Patch into (B, n_patches_scale, C, patch_len).
-      3. Flatten the (C, patch_len) into a single feature dim and project
-         through a per-scale-shared linear → (B, n_patches_scale, d_model).
+      3. Project each (channel × patch_len) into d_model via a
+         channel-shared `Linear(patch_len → d_model)`, then collapse the
+         channel axis (mean by default, or attention-pool / per-channel-
+         weight via `channel_pool`). This is the Phase-2.5 fix — the
+         pre-2.5 path flattened (C × patch_len) into a single Linear,
+         which baked channel-mixing into the tokenizer; this version
+         keeps the per-channel projection independent (each channel
+         goes through the same projection) so the backbone sees
+         patches whose channel structure has been preserved through
+         a PatchTST-style independence layer first.
       4. Add a learnable per-scale resolution embedding (broadcast over
          the patch axis).
 
     Then concatenate all scales' patches along the sequence axis and
     prepend a learnable `[FORECAST]` token. Output:
         (B, 1 + sum_scales(n_patches_scale), d_model).
+
+    `channel_independent`: if True (default for Phase 2.5+), use the
+    channel-shared per-channel projection. If False, use the legacy
+    flattened-channel projection (for loading Phase 2.x checkpoints).
     """
 
     def __init__(
@@ -120,6 +132,12 @@ class MultiResTokenizer(nn.Module):
         patch_stride: int = DEFAULT_PATCH_STRIDE,
         *,
         revin_affine: bool = True,
+        channel_independent: bool = False,    # legacy default for backward compat
+                                              # with pre-Phase-2.5 checkpoints
+                                              # (A2/PU10/PU15/etc).
+                                              # Phase 2.5+ configs explicitly
+                                              # set this to True.
+        channel_pool: str = "mean",
     ) -> None:
         super().__init__()
         if not scales:
@@ -128,9 +146,14 @@ class MultiResTokenizer(nn.Module):
         if num_channels <= 0 or d_model <= 0:
             msg = f"num_channels and d_model must be positive ({num_channels}, {d_model})"
             raise ValueError(msg)
+        if channel_pool not in {"mean", "attn"}:
+            msg = f"channel_pool must be 'mean' or 'attn', got {channel_pool!r}"
+            raise ValueError(msg)
         self.scales = tuple(scales)
         self.num_channels = num_channels
         self.d_model = d_model
+        self.channel_independent = channel_independent
+        self.channel_pool = channel_pool
         self.patcher = Patcher(patch_len=patch_len, stride=patch_stride)
 
         # Per-scale RevIN, since each scale's normalization stats are
@@ -141,13 +164,35 @@ class MultiResTokenizer(nn.Module):
             for sc in scales
         })
 
-        # Per-scale linear projection from (C * patch_len) → d_model.
-        # Channel-independent in spirit (no cross-channel mixing yet) —
-        # the backbone's later layers handle that.
-        self.scale_projections = nn.ModuleDict({
-            sc: nn.Linear(num_channels * patch_len, d_model)
-            for sc in scales
-        })
+        if channel_independent:
+            # Channel-shared per-channel projection: Linear(patch_len → d_model)
+            # applied identically to each of the `num_channels` channels.
+            # Phase 2.5+ default — preserves channel independence at the
+            # tokenizer layer (PatchTST-style).
+            self.scale_proj_per_channel = nn.ModuleDict({
+                sc: nn.Linear(patch_len, d_model)
+                for sc in scales
+            })
+            # Attention-based channel pool (if requested): a learned
+            # per-(scale) attention vector that scores each channel,
+            # softmax over channels, then weighted sum.
+            if channel_pool == "attn":
+                self.channel_attn_query = nn.ParameterDict({
+                    sc: nn.Parameter(torch.randn(d_model) * 0.02)
+                    for sc in scales
+                })
+            else:
+                self.channel_attn_query = None
+            # Keep legacy attribute None so state_dict round-trip is clean.
+            self.scale_projections = None
+        else:
+            # Legacy path: (C * patch_len) → d_model. Loads pre-2.5 ckpts.
+            self.scale_projections = nn.ModuleDict({
+                sc: nn.Linear(num_channels * patch_len, d_model)
+                for sc in scales
+            })
+            self.scale_proj_per_channel = None
+            self.channel_attn_query = None
 
         # Learnable resolution embedding per scale, added to every patch
         # of that scale so the backbone can tell them apart.
@@ -157,6 +202,32 @@ class MultiResTokenizer(nn.Module):
         # Learnable [FORECAST] summary token, prepended to the sequence.
         self.forecast_token = nn.Parameter(torch.zeros(1, 1, d_model))
         nn.init.normal_(self.forecast_token, std=0.02)
+
+    def _project_patches(self, patches: torch.Tensor, sc: str) -> torch.Tensor:
+        """`(B, n, C, patch_len)` → `(B, n, d_model)`.
+
+        Channel-independent path: applies a SHARED `Linear(P → d_model)` per
+        channel, then collapses the C axis via mean (default) or attention.
+        Legacy path: flattens (C, P) and projects through a single Linear.
+        """
+        B, n, C, P = patches.shape
+        if self.channel_independent:
+            # Per-channel projection (channel-shared weights):
+            #   (B, n, C, P) → (B, n, C, d_model)
+            per_channel = self.scale_proj_per_channel[sc](patches)
+            if self.channel_pool == "attn" and self.channel_attn_query is not None:
+                # Soft-attention over channels:
+                # logits = per_channel @ query  → (B, n, C)
+                q = self.channel_attn_query[sc]                             # (d_model,)
+                logits = (per_channel * q).sum(dim=-1)                      # (B, n, C)
+                weights = logits.softmax(dim=-1).unsqueeze(-1)              # (B, n, C, 1)
+                tokens = (per_channel * weights).sum(dim=2)                 # (B, n, d_model)
+            else:
+                tokens = per_channel.mean(dim=2)                            # (B, n, d_model)
+            return tokens
+        # Legacy flatten-and-project:
+        flat = patches.reshape(B, n, C * P)
+        return self.scale_projections[sc](flat)
 
     def forward(self, x_by_scale: dict[str, torch.Tensor]) -> torch.Tensor:
         """`{scale: (B, L_scale, C)}` → `(B, 1 + total_patches, d_model)`."""
@@ -179,9 +250,7 @@ class MultiResTokenizer(nn.Module):
                 raise ValueError(msg)
             x_n = self.revins[sc](x, mode="norm")                # (B, L, C)
             patches = self.patcher(x_n)                          # (B, n, C, patch_len)
-            B, n, C, P = patches.shape
-            flat = patches.reshape(B, n, C * P)                  # (B, n, C*P)
-            tokens = self.scale_projections[sc](flat)            # (B, n, d_model)
+            tokens = self._project_patches(patches, sc)          # (B, n, d_model)
             tokens = tokens + self.resolution_embed[idx]         # (B, n, d_model)
             per_scale_tokens.append(tokens)
 

@@ -197,6 +197,83 @@ class MultiHorizonForecastHead(nn.Module):
         return flat.view(B, self.n_patches, self.num_channels, self.patch_len)
 
 
+class MultiHorizonScalarForecastHead(nn.Module):
+    """Phase 2.5 — predict log returns at SPECIFIC future horizons.
+
+    Unlike `MultiHorizonForecastHead` (which predicts 6 consecutive 5m
+    patches as dense look-ahead) and `CrossAttentionForecastHead` (same,
+    cross-attention variant), this head predicts a single scalar per
+    (horizon, channel) at the exact horizons used by the downstream
+    supervised Phase 3 (15m, 30m, 45m, 60m, 90m, 120m, 180m forward).
+
+    Architecture:
+      - `n_horizons` learnable queries (one per horizon), each `d_model`-dim.
+      - K cross-attention blocks (queries attend over encoder hidden states).
+      - Final norm + Linear(d_model → num_channels) per horizon.
+
+    Output shape: `(B, n_horizons, num_channels)` — log return at each
+    horizon for each forecast channel.
+
+    Compared to the consecutive-patch heads: 7×5=35 targets per sample
+    (vs 96×5=480 for 6-patch dense). Less dense supervision but each
+    target is structurally aligned with the supervised downstream
+    (Phase 3 posttrain reads the same horizon labels).
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        n_horizons: int,
+        num_channels: int,
+        *,
+        n_layers: int = 2,
+        n_heads: int = 8,
+        ffn_ratio: int = 2,
+        query_init_std: float = 0.02,
+    ) -> None:
+        super().__init__()
+        if n_horizons <= 0:
+            msg = f"n_horizons must be positive, got {n_horizons}"
+            raise ValueError(msg)
+        if num_channels <= 0:
+            msg = f"num_channels must be positive, got {num_channels}"
+            raise ValueError(msg)
+        if d_model % n_heads != 0:
+            msg = (
+                f"d_model ({d_model}) must be divisible by n_heads ({n_heads}) "
+                f"for MultiHorizonScalarForecastHead"
+            )
+            raise ValueError(msg)
+        self.n_horizons = n_horizons
+        self.num_channels = num_channels
+        # Learnable per-horizon query — each carries "what does horizon h
+        # look like" and is updated by cross-attention to encoder states.
+        self.queries = nn.Parameter(
+            torch.randn(n_horizons, d_model) * query_init_std,
+        )
+        self.blocks = nn.ModuleList([
+            _CrossAttnBlock(d_model, n_heads, ffn_ratio)
+            for _ in range(n_layers)
+        ])
+        self.final_norm = nn.LayerNorm(d_model)
+        # Per-horizon → per-channel scalar. Shared projection across horizons.
+        self.proj = nn.Linear(d_model, num_channels)
+
+    def forward(self, encoder_hidden: torch.Tensor) -> torch.Tensor:
+        """`(B, T, d_model)` → `(B, n_horizons, num_channels)`."""
+        if encoder_hidden.dim() != 3:
+            msg = (
+                f"Expected (B, T, d_model), got shape {tuple(encoder_hidden.shape)}"
+            )
+            raise ValueError(msg)
+        B = encoder_hidden.size(0)
+        q = self.queries.unsqueeze(0).expand(B, -1, -1).contiguous()  # (B, H, d_model)
+        for block in self.blocks:
+            q = block(q, encoder_hidden)
+        q = self.final_norm(q)
+        return self.proj(q)                                            # (B, H, num_channels)
+
+
 class _CrossAttnBlock(nn.Module):
     """Pre-norm cross-attention + FFN block. Q comes from learned forecast
     queries; K, V come from the encoder hidden states.

@@ -67,14 +67,23 @@ log = get_logger(__name__)
 
 
 # Horizon registries — single source of truth.
-HORIZONS_INTRADAY: tuple[str, ...] = ("30m", "120m")
+# Phase 2.5 extension (2026-05-14): added 15m/45m/60m/90m/180m intraday horizons
+# for multi-horizon forecast pretraining on liquid-only universe.
+HORIZONS_INTRADAY: tuple[str, ...] = (
+    "15m", "30m", "45m", "60m", "90m", "120m", "180m",
+)
 HORIZONS_DAILY: tuple[str, ...] = ("1d", "2d")
 ALL_HORIZONS: tuple[str, ...] = HORIZONS_INTRADAY + HORIZONS_DAILY
 
 # Number of forward 5m bars per intraday horizon (each bar = 5min).
 HORIZON_BAR_COUNT: dict[str, int] = {
-    "30m": 6,    # 6 × 5m = 30m
-    "120m": 24,  # 24 × 5m = 120m
+    "15m": 3,     # 3 × 5m = 15m
+    "30m": 6,     # 6 × 5m = 30m
+    "45m": 9,     # 9 × 5m = 45m
+    "60m": 12,    # 12 × 5m = 60m
+    "90m": 18,    # 18 × 5m = 90m
+    "120m": 24,   # 24 × 5m = 120m
+    "180m": 36,   # 36 × 5m = 180m
 }
 
 # Number of forward trading days per daily horizon.
@@ -85,10 +94,9 @@ HORIZON_DAY_COUNT: dict[str, int] = {
 
 # The scale we read inputs from, per horizon.
 HORIZON_SCALE: dict[str, str] = {
-    "30m": "5m",
-    "120m": "5m",
-    "1d": "day",
-    "2d": "day",
+    "15m": "5m", "30m": "5m", "45m": "5m", "60m": "5m",
+    "90m": "5m", "120m": "5m", "180m": "5m",
+    "1d": "day", "2d": "day",
 }
 
 # Output schema. `y_rank` is reserved for cross-section-time fill (Phase 3.3).

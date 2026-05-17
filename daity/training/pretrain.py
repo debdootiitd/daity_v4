@@ -54,13 +54,18 @@ from daity.data.preprocess import (
     to_log_returns,
     to_log_returns_partial,
 )
-from daity.data.tokenizer_targets import build_forecast_targets, build_targets
+from daity.data.tokenizer_targets import (
+    build_forecast_targets,
+    build_multi_horizon_scalar_targets,
+    build_targets,
+)
 from daity.models.backbone import Backbone
 from daity.models.heads import (
     ContrastiveHead,
     CrossAttentionForecastHead,
     MaskedReconstructionHead,
     MultiHorizonForecastHead,
+    MultiHorizonScalarForecastHead,
     NextPatchHead,
 )
 from daity.models.tokenizer import (
@@ -99,6 +104,11 @@ class PretrainConfig:
     mask_ratio: float = DEFAULT_MASK_RATIO
     contrastive_proj_dim: int = 128
     contrastive_temperature: float = 0.07
+    # Phase 2.5: channel-independent tokenizer projection (PatchTST true).
+    # Default True for new training; set False to load pre-2.5 ckpts.
+    # See daity/models/tokenizer.py for rationale.
+    channel_independent: bool = True
+    channel_pool: str = "mean"  # "mean" | "attn"
     # RevIN affine. Default False for SSL pretraining (DESIGN amendment 12):
     # with `affine=True`, the learnable gamma/beta are present in BOTH the
     # input projections AND the recon/forecast targets (since `build_targets`
@@ -116,6 +126,19 @@ class PretrainConfig:
     # trading day forward.
     forecast_scale: str = "5m"
     forecast_n_patches: int = 6
+    # Phase 2.5: multi-horizon scalar forecast targets (vs consecutive-patch).
+    # When `forecast_head_type == "multi_horizon_scalar"`, predict a single
+    # log-return scalar per (horizon, channel). Horizons given in 5m-bar
+    # counts: (3, 6, 9, 12, 18, 24, 36) = 15/30/45/60/90/120/180 min.
+    # Targets are cumulative log returns from anchor to each horizon,
+    # optionally sqrt-time normalized (default True, Brownian scaling).
+    forecast_horizons_bars: tuple[int, ...] = (3, 6, 9, 12, 18, 24, 36)
+    forecast_sqrt_time_normalize: bool = True
+    # Phase 2.5 Option C: per-(horizon, channel) target std for z-score
+    # normalization. If set (recommended), overrides sqrt_time_normalize.
+    # Shape: tuple of (n_horizons) floats (channel-uniform) OR
+    #        tuple of tuples (n_horizons × n_channels).
+    forecast_per_horizon_channel_std: tuple | None = None
     # Phase 2.4 (per architect review §3.1): forecast head architecture.
     # "mlp" — original single-vector MLP from FORECAST token (legacy; preserves
     #         v1/v2/v2_long/v3_lr/v3_features behavior for back-compat).
@@ -185,6 +208,8 @@ class PretrainModule(L.LightningModule):
             d_model=cfg.d_model,
             patch_len=cfg.patch_len, patch_stride=cfg.patch_stride,
             revin_affine=cfg.revin_affine,
+            channel_independent=cfg.channel_independent,
+            channel_pool=cfg.channel_pool,
         )
         self.backbone = Backbone(
             d_model=cfg.d_model, n_layers=cfg.n_layers, n_heads=cfg.n_heads,
@@ -219,7 +244,13 @@ class PretrainModule(L.LightningModule):
         #   "cross_attention" — H queries cross-attend over full encoder output
         # See `daity/models/heads.py` for the architectural rationale.
         self.forecast_head: nn.Module | None
-        if cfg.forecast_n_patches > 0:
+        # Forecast head enabled if (n_patches > 0) for patch heads, or (horizons
+        # non-empty) for the multi_horizon_scalar head.
+        forecast_enabled = (
+            cfg.forecast_n_patches > 0
+            or cfg.forecast_head_type == "multi_horizon_scalar"
+        )
+        if forecast_enabled:
             if cfg.forecast_head_type == "mlp":
                 self.forecast_head = MultiHorizonForecastHead(
                     d_model=cfg.d_model, n_patches=cfg.forecast_n_patches,
@@ -233,10 +264,20 @@ class PretrainModule(L.LightningModule):
                     patch_len=cfg.patch_len,
                     n_heads=cfg.n_heads,
                 )
+            elif cfg.forecast_head_type == "multi_horizon_scalar":
+                # Phase 2.5: predict log returns at specific horizons (not
+                # consecutive patches). Targets are aligned with the
+                # supervised Phase 3 posttrain head's horizons.
+                self.forecast_head = MultiHorizonScalarForecastHead(
+                    d_model=cfg.d_model,
+                    n_horizons=len(cfg.forecast_horizons_bars),
+                    num_channels=self._forecast_num_channels,
+                    n_heads=cfg.n_heads,
+                )
             else:
                 msg = (
                     f"Unknown forecast_head_type {cfg.forecast_head_type!r}; "
-                    f"expected 'mlp' or 'cross_attention'"
+                    f"expected 'mlp', 'cross_attention', or 'multi_horizon_scalar'"
                 )
                 raise ValueError(msg)
         else:
@@ -394,24 +435,47 @@ class PretrainModule(L.LightningModule):
         # the val_forecast plateau; cross-attention removes it.
         loss_forecast: torch.Tensor
         if self.forecast_head is not None and future_bars is not None:
-            forecast_targets = build_forecast_targets(
-                future_bars=future_bars,
-                forecast_scale=self.cfg.forecast_scale,
-                n_patches=self.cfg.forecast_n_patches,
-                patch_len=self.cfg.patch_len,
-                tokenizer=self.tokenizer,
-            )                                                 # (B, H, num_channels, patch_len)
-            # Slice to forecast_num_channels — for 18-channel feature_parquet
-            # runs this drops the heavy-tailed derived feature targets and
-            # keeps only the OHLCV bar_channels (channels 0:5). For 5-channel
-            # raw OHLCV runs this is a no-op (forecast_num_channels == 5).
-            if self._forecast_num_channels < self.cfg.num_channels:
-                forecast_targets = forecast_targets[:, :, :self._forecast_num_channels, :]
-            if self.cfg.forecast_head_type == "cross_attention":
-                forecast_pred = self.forecast_head(hidden_nc[:, 1:])
-            else:                                            # "mlp"
-                forecast_pred = self.forecast_head(hidden_nc[:, 0])
-            loss_forecast = ((forecast_pred - forecast_targets) ** 2).mean()
+            if self.cfg.forecast_head_type == "multi_horizon_scalar":
+                # Phase 2.5: multi-horizon scalar prediction.
+                # Build per_horizon_channel_std tensor if config provided.
+                per_h_c_std = None
+                if self.cfg.forecast_per_horizon_channel_std is not None:
+                    per_h_c_std = torch.tensor(
+                        self.cfg.forecast_per_horizon_channel_std,
+                        dtype=torch.float32,
+                        device=future_bars.device,
+                    )
+                forecast_targets = build_multi_horizon_scalar_targets(
+                    future_bars=future_bars[:, :, :self._forecast_num_channels],
+                    horizons_bars=self.cfg.forecast_horizons_bars,
+                    target_form=self.cfg.target_form,
+                    sqrt_time_normalize=self.cfg.forecast_sqrt_time_normalize,
+                    per_horizon_channel_std=per_h_c_std,
+                )                                            # (B, n_horizons, num_channels)
+                forecast_pred = self.forecast_head(hidden_nc[:, 1:])  # (B, H, C)
+            else:
+                forecast_targets = build_forecast_targets(
+                    future_bars=future_bars,
+                    forecast_scale=self.cfg.forecast_scale,
+                    n_patches=self.cfg.forecast_n_patches,
+                    patch_len=self.cfg.patch_len,
+                    tokenizer=self.tokenizer,
+                )                                            # (B, H, num_channels, patch_len)
+                if self._forecast_num_channels < self.cfg.num_channels:
+                    forecast_targets = forecast_targets[:, :, :self._forecast_num_channels, :]
+                if self.cfg.forecast_head_type == "cross_attention":
+                    forecast_pred = self.forecast_head(hidden_nc[:, 1:])
+                else:                                        # "mlp"
+                    forecast_pred = self.forecast_head(hidden_nc[:, 0])
+            # Phase 2.5: Smooth-L1 (Huber, delta=1) replaces plain MSE.
+            # Financial forward-return targets are heavy-tailed; pure MSE
+            # produces 100-1000× loss spikes on outlier batches (verified
+            # on W&B run txcpuu2k step 150/530/600). Smooth-L1 is quadratic
+            # for |error|<beta and linear past it — caps outlier influence
+            # at linear rather than quadratic growth.
+            loss_forecast = torch.nn.functional.smooth_l1_loss(
+                forecast_pred, forecast_targets, reduction="mean", beta=1.0,
+            )
         else:
             # Forecast head disabled or batch lacks future bars: contribute
             # a zero on the same device/dtype so the optimizer graph is
