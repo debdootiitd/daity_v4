@@ -65,6 +65,13 @@ REGIME_FEAT_NAMES: tuple[str, ...] = (
     "univ_1d_return",   # signed equal-weight 1-day return (market avg)
     "sector_disp_1d",   # cross-sectional std of per-sector mean 1d returns
                          # (high = sectors diverging; low = market is one-way)
+    "cohort_mean_ret_30m",         # cohort-mean log-return over last 30m
+    "cohort_mean_ret_1h",          # cohort-mean log-return over last 60m
+    "cohort_mean_ret_today_so_far",# cohort-mean log-return from today's first
+                                    # 5m close (9:20 IST) to anchor. 0 at 9:15.
+    "anchor_min_of_day_sin",       # sin(2π × minutes_since_open / 375). Lets
+    "anchor_min_of_day_cos",       # the bias head distinguish "all-zero = early
+                                    # day" from "all-zero = flat market".
 )
 N_REGIME_FEATS: int = len(REGIME_FEAT_NAMES)
 
@@ -422,11 +429,78 @@ class CohortAssembler:
             ]
             if len(per_sector_means) > 1:
                 sector_disp_1d = float(np.std(per_sector_means))
+
+        # Trailing cohort-mean intraday returns. Causally valid: all closes
+        # are at ts <= anchor_utc. Returns 0.0 when the lookback close is
+        # missing for a stock (skipped); 0.0 overall if no stock has both.
+        cohort_30m = self._cohort_trailing_return(
+            alive_syms, anchor_utc, anchor_close_by_sym, lookback_min=30,
+        )
+        cohort_1h = self._cohort_trailing_return(
+            alive_syms, anchor_utc, anchor_close_by_sym, lookback_min=60,
+        )
+        cohort_today = self._cohort_today_so_far_return(
+            alive_syms, anchor_utc, anchor_close_by_sym, anchor_date,
+        )
+        # Minute-of-day encoding (9:15 IST = 0, 15:30 IST = 375). Lets the
+        # bias head distinguish "early-day zeros" from "flat-market zeros".
+        anchor_ist_time = (anchor_utc + timedelta(hours=5, minutes=30)).time()
+        min_since_open = (anchor_ist_time.hour * 60 + anchor_ist_time.minute) - (9 * 60 + 15)
+        anchor_min_sin = float(np.sin(2 * np.pi * min_since_open / 375))
+        anchor_min_cos = float(np.cos(2 * np.pi * min_since_open / 375))
         return torch.tensor(
             [univ_5d_ret, univ_breadth, univ_xs_vol,
-             univ_1d_ret, sector_disp_1d],
+             univ_1d_ret, sector_disp_1d,
+             cohort_30m, cohort_1h, cohort_today,
+             anchor_min_sin, anchor_min_cos],
             dtype=torch.float32,
         )
+
+    def _cohort_trailing_return(
+        self,
+        alive_syms: list[str],
+        anchor_utc: datetime,
+        anchor_close_by_sym: dict[str, float],
+        lookback_min: int,
+    ) -> float:
+        """Cohort-mean log-return from (anchor - lookback_min) to anchor."""
+        ts_lookback = anchor_utc - timedelta(minutes=lookback_min)
+        rets: list[float] = []
+        for s in alive_syms:
+            c0 = self._close_at(s, "5m", ts_lookback)
+            if c0 is None or c0 <= 0:
+                continue
+            c1 = anchor_close_by_sym.get(s)
+            if c1 is None:
+                continue
+            rets.append(float(np.log(c1 / c0)))
+        return float(np.mean(rets)) if rets else 0.0
+
+    def _cohort_today_so_far_return(
+        self,
+        alive_syms: list[str],
+        anchor_utc: datetime,
+        anchor_close_by_sym: dict[str, float],
+        anchor_date: date,
+    ) -> float:
+        """Cohort-mean log-return from today's first 5m close (9:20 IST)
+        to the anchor. Returns 0.0 at the 9:15 anchor (no prior intraday bar).
+        """
+        anchor_ist_time = (anchor_utc + timedelta(hours=5, minutes=30)).time()
+        first_5m_close_ist = dtime(9, 20)
+        if anchor_ist_time <= first_5m_close_ist:
+            return 0.0
+        ts_open = _ist_anchor_to_utc(anchor_date, first_5m_close_ist)
+        rets: list[float] = []
+        for s in alive_syms:
+            c0 = self._close_at(s, "5m", ts_open)
+            if c0 is None or c0 <= 0:
+                continue
+            c1 = anchor_close_by_sym.get(s)
+            if c1 is None:
+                continue
+            rets.append(float(np.log(c1 / c0)))
+        return float(np.mean(rets)) if rets else 0.0
 
 
 class CohortDataset(IterableDataset):

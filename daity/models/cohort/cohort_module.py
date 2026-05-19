@@ -92,6 +92,9 @@ class CohortModel(nn.Module):
         # When True, the model emits both regression and classifier logits.
         # Threshold is set in the loss / strategy layer, not the model.
         enable_classifier_head: bool = False,
+        # Cohort-bias head: predicts the per-cohort, per-horizon mean offset.
+        # Combined with the regression head at inference: pred_total = pred_alpha + cohort_bias.
+        enable_cohort_bias_head: bool = False,
     ) -> None:
         super().__init__()
         self.d_model = d_model
@@ -136,6 +139,8 @@ class CohortModel(nn.Module):
             n_heads=head_n_heads,
             ffn_ratio=head_ffn_ratio,
             enable_classifier=enable_classifier_head,
+            enable_cohort_bias=enable_cohort_bias_head,
+            n_regime_feats=n_regime_feats,
         )
         # Optional sector classification head (operates on the encoder's
         # stock CLS, BEFORE market context — so it directly supervises the
@@ -237,21 +242,33 @@ class CohortModel(nn.Module):
         conditioned = self.cross_attn(stock_state, market_ctx)         # (B, N, 1+T, d)
 
         # --- (D) Heads: per-horizon queries cross-attend over each stock's
-        # full conditioned sequence (CLS + patch tokens). ----
-        head_out = self.heads(conditioned)
+        # full conditioned sequence (CLS + patch tokens). The cohort_bias
+        # head additionally consumes regime_feats directly (separate branch). ----
+        head_out = self.heads(conditioned, regime_feats=regime_feats)
         # head_out is either a Tensor (B, N, H) when classifier is disabled,
         # or a dict {"reg": ..., "clf": ...} when enabled.
         if isinstance(head_out, dict):
             pred = head_out["reg"]
             clf_logits = head_out.get("clf")
+            cohort_bias = head_out.get("cohort_bias")
         else:
             pred = head_out
             clf_logits = None
+            cohort_bias = None
+        # Hard-center pred per (cohort, horizon) so it has zero cross-sectional
+        # mean by construction. This makes the alpha/bias decomposition
+        # mathematically clean: pred carries ONLY the cross-sectional residual
+        # (alpha), cohort_bias carries the cohort-level offset, and at inference
+        # pred_total = pred + cohort_bias correctly attributes signal to each.
+        # Without this, pred's cross-sectional mean is unconstrained — it can
+        # absorb part of the cohort-level signal that bias is meant to model.
+        pred = pred - pred.float().mean(dim=1, keepdim=True).to(pred.dtype)
         if (sector_logits is not None or contrastive_embeds is not None
-                or clf_logits is not None):
+                or clf_logits is not None or cohort_bias is not None):
             return {
                 "pred": pred,
                 "clf_logits": clf_logits,
+                "cohort_bias": cohort_bias,
                 "sector_logits": sector_logits,
                 "contrastive_embeds": contrastive_embeds,
             }

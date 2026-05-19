@@ -116,7 +116,8 @@ def _parse_anchors(spec: str | None, default_single: str) -> list[dtime]:
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--seed-ckpt", type=Path, required=True)
+    ap.add_argument("--seed-ckpt", type=Path, default=None,
+                    help="Optional contrastive-pretrain checkpoint; if omitted, model uses random init.")
     ap.add_argument("--cache-root", type=Path, default=Path("data/cache"))
     ap.add_argument("--feature-root", type=Path, default=Path("data/features_parquet"))
     # Universe (must match seed ckpt's stock_embed)
@@ -148,14 +149,24 @@ def parse_args() -> argparse.Namespace:
                          "before this date (YYYY-MM-DD). Training still happens. "
                          "Useful to skip GPU work during long pre-test warmup.")
     ap.add_argument("--prefetch-workers", type=int, default=0,
-                    help="EXPERIMENTAL. If > 0, use N worker THREADS to prefetch samples. "
-                         "Currently disabled-by-default: GIL contention in CohortAssembler "
-                         "makes ThreadPool prefetch slower than synchronous (verified on A6000). "
-                         "TODO: convert to multiprocessing.Pool for true parallelism. "
-                         "Default 0 = synchronous.")
+                    help="DEPRECATED. ThreadPool prefetch — GIL-bound, doesn't help. "
+                         "Use --assembly-workers instead for true multiprocessing.")
+    ap.add_argument("--assembly-workers", type=int, default=0,
+                    help="If > 0, use N worker PROCESSES (via multiprocessing) to "
+                         "assemble cohort samples in parallel. Each worker rebuilds its "
+                         "own assembler. Recommended: 8-16 on a multi-core box.")
     # Optimizer
     ap.add_argument("--optimizer", choices=["adamw", "adagrad"], default="adagrad")
     ap.add_argument("--lr",            type=float, default=1e-3)
+    ap.add_argument("--lr-bias",       type=float, default=-1.0,
+                    help="LR for proj_cohort_bias head only. -1 (default) "
+                         "means use --lr. Use a smaller value when the bias "
+                         "loss is jittery (cohort mean is low-SNR).")
+    ap.add_argument("--lr-warmup-days", type=int, default=0,
+                    help="Linearly ramp LR from --lr-warmup-start-frac × lr → lr over the first N online days. "
+                         "Default 0 = no warmup.")
+    ap.add_argument("--lr-warmup-start-frac", type=float, default=0.1,
+                    help="Starting fraction of --lr at day 0 when --lr-warmup-days > 0.")
     ap.add_argument("--weight-decay",  type=float, default=0.0)
     ap.add_argument("--grad-clip",     type=float, default=1.0)
     # Loss
@@ -165,6 +176,9 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--smooth-l1-beta", type=float, default=0.005)
     ap.add_argument("--rank-top-k",     type=int,   default=20)
     # Win-rate classifier head ablation
+    ap.add_argument("--use-cohort-bias-head", action="store_true",
+                    help="Enable a learnable cohort-bias head that predicts per-cohort, "
+                         "per-horizon mean offset. At inference: pred_total = pred + cohort_bias.")
     ap.add_argument("--use-classifier-head", action="store_true",
                     help="Add per-horizon win-rate classifier head to the model")
     ap.add_argument("--w-clf", type=float, default=0.0,
@@ -242,6 +256,7 @@ def _build_model(args, n_stocks: int, n_sectors: int, device: str) -> CohortMode
         cross_n_heads=args.n_heads,
         n_regime_feats=N_REGIME_FEATS,
         enable_classifier_head=getattr(args, "use_classifier_head", False),
+        enable_cohort_bias_head=getattr(args, "use_cohort_bias_head", False),
     ).to(device)
 
 
@@ -277,7 +292,12 @@ def _stack_batch(samples_anchors: list[tuple], device: str) -> dict:
 
 
 def _stack_labels_validity(samples: list, device: str):
-    """Stack labels + per-stock validity + active-horizon validity for batched training."""
+    """Stack labels + per-stock validity + active-horizon validity for batched training.
+
+    Returns (labels_clean, validity, label_v) where label_v is the per-stock,
+    per-horizon validity mask (B, N, H) — needed by the loss to compute the
+    masked cohort mean correctly.
+    """
     labels = torch.stack([s.labels for s in samples], dim=0).to(device)              # (B, N, H)
     label_v = torch.stack([s.label_validity_per_stock for s in samples], dim=0).to(device)
     labels_clean = torch.where(label_v, labels, torch.zeros_like(labels))
@@ -292,7 +312,7 @@ def _stack_labels_validity(samples: list, device: str):
     validity = torch.stack(val_list, dim=0).to(device)                                # (B, H)
     # Also: drop horizons whose per-stock label_v is bad
     validity = validity & (label_v.float().mean(dim=1) > 0.8)
-    return labels_clean, validity
+    return labels_clean, validity, label_v
 
 
 def _active_validity(sample, device: str) -> torch.Tensor:
@@ -319,6 +339,16 @@ def _unpack_pred_and_clf(model_out):
     if isinstance(model_out, tuple):
         return model_out[0], None
     return model_out, None
+
+
+def _unpack_all(model_out):
+    """Return (pred, clf_logits or None, cohort_bias or None)."""
+    if isinstance(model_out, dict):
+        return (model_out["pred"], model_out.get("clf_logits"),
+                model_out.get("cohort_bias"))
+    if isinstance(model_out, tuple):
+        return model_out[0], None, None
+    return model_out, None, None
 
 
 def _shift_trading_days(d: date, n: int, cal: NSECalendar) -> date | None:
@@ -367,32 +397,60 @@ def main() -> int:
     n_params = sum(p.numel() for p in model.parameters())
     print(f"model: {n_params/1e6:.2f}M params", flush=True)
 
-    # Load seed ckpt
-    print(f"loading seed: {args.seed_ckpt}", flush=True)
-    sd = torch.load(args.seed_ckpt, map_location=device, weights_only=False)
-    m_sd = sd.get("cohort_init_state_dict", sd.get("model_state_dict", sd))
-    # Drop tensors whose shape doesn't match.
-    cur = model.state_dict()
-    dropped = []
-    for k in list(m_sd.keys()):
-        if k in cur and m_sd[k].shape != cur[k].shape:
-            dropped.append((k, tuple(m_sd[k].shape), tuple(cur[k].shape)))
-            del m_sd[k]
-    if dropped:
-        print(f"  dropping {len(dropped)} mismatched-shape tensors:", flush=True)
-        for k, src, dst in dropped:
-            print(f"    {k}: ckpt={src} model={dst}", flush=True)
-    missing, unexpected = model.load_state_dict(m_sd, strict=False)
-    print(f"  loaded | missing={len(missing)} unexpected={len(unexpected)}", flush=True)
+    # Load seed ckpt (optional — if None, model stays at random init)
+    sd = {}
+    if args.seed_ckpt is not None:
+        print(f"loading seed: {args.seed_ckpt}", flush=True)
+        sd = torch.load(args.seed_ckpt, map_location=device, weights_only=False)
+        m_sd = sd.get("cohort_init_state_dict", sd.get("model_state_dict", sd))
+        # Drop tensors whose shape doesn't match.
+        cur = model.state_dict()
+        dropped = []
+        for k in list(m_sd.keys()):
+            if k in cur and m_sd[k].shape != cur[k].shape:
+                dropped.append((k, tuple(m_sd[k].shape), tuple(cur[k].shape)))
+                del m_sd[k]
+        if dropped:
+            print(f"  dropping {len(dropped)} mismatched-shape tensors:", flush=True)
+            for k, src, dst in dropped:
+                print(f"    {k}: ckpt={src} model={dst}", flush=True)
+        missing, unexpected = model.load_state_dict(m_sd, strict=False)
+        print(f"  loaded | missing={len(missing)} unexpected={len(unexpected)}", flush=True)
+    else:
+        print("no seed ckpt — starting from random init", flush=True)
 
-    # Optimizer (persistent across days)
+    # Optimizer (persistent across days). Use param groups when --lr-bias
+    # is specified, so the proj_cohort_bias head gets a different LR than
+    # the rest of the model (cohort-mean prediction is low-SNR — needs a
+    # smaller step to avoid jitter dominating the gradient).
+    bias_lr = float(args.lr_bias) if args.lr_bias > 0 else float(args.lr)
+    bias_params = []
+    other_params = []
+    for name, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+        # New arch: cohort_bias_mlps (ModuleList of per-horizon MLPs).
+        # Older: cohort_bias_mlp (single shared-trunk MLP).
+        # Legacy: proj_cohort_bias (kept for back-compat with old ckpts).
+        if ("cohort_bias_mlps" in name
+                or "cohort_bias_mlp" in name
+                or "proj_cohort_bias" in name):
+            bias_params.append(p)
+        else:
+            other_params.append(p)
+    param_groups = [
+        {"params": other_params, "lr": float(args.lr),  "name": "main"},
+        {"params": bias_params,  "lr": bias_lr,         "name": "cohort_bias"},
+    ]
+    print(f"optimizer groups: main lr={args.lr} ({len(other_params)} tensors), "
+          f"cohort_bias lr={bias_lr} ({len(bias_params)} tensors)", flush=True)
     if args.optimizer == "adagrad":
         optimizer = torch.optim.Adagrad(
-            model.parameters(), lr=args.lr, weight_decay=args.weight_decay,
+            param_groups, weight_decay=args.weight_decay,
         )
     else:
         optimizer = torch.optim.AdamW(
-            model.parameters(), lr=args.lr, weight_decay=args.weight_decay,
+            param_groups, weight_decay=args.weight_decay,
             betas=(0.9, 0.95),
         )
     # Restore optimizer state from seed ckpt (for resume-from-day-X)
@@ -473,8 +531,10 @@ def main() -> int:
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device, dtype=torch.bfloat16):
                 model_out = model(batch)
-                pred = _unpack_pred(model_out)
-                out = loss_fn(pred, labels_clean, validity)
+                pred, clf_t, cbias_t = _unpack_all(model_out)
+                out = loss_fn(pred, labels_clean, validity,
+                              clf_logits=clf_t, cohort_bias=cbias_t,
+                              label_validity_per_stock=label_v)
             out["total"].backward()
             if args.grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
@@ -502,6 +562,20 @@ def main() -> int:
     n_predicted = 0
     n_trained = 0
     last_loss = float("nan")
+    last_loss_reg = float("nan")
+    last_loss_reg_alpha = float("nan")
+    last_loss_reg_bias = float("nan")
+    last_loss_clf = float("nan")
+    last_loss_rank = float("nan")
+    last_loss_bias = float("nan")
+    # Per-horizon losses: dict[horizon_name -> float]
+    last_loss_reg_per_h: dict[str, float] = {}
+    last_loss_clf_per_h: dict[str, float] = {}
+    # Day-running accumulators for per-horizon (denominator excludes invalid horizons)
+    day_reg_per_h_sum: dict[str, float] = {}
+    day_reg_per_h_cnt: dict[str, int] = {}
+    day_clf_per_h_sum: dict[str, float] = {}
+    day_clf_per_h_cnt: dict[str, int] = {}
     bs = max(1, args.anchors_batch_size)
     predict_from = date.fromisoformat(args.predict_from_date) if args.predict_from_date else None
 
@@ -530,38 +604,115 @@ def main() -> int:
             jobs.append((di, ai, d, t_anchor))
 
     # Pick iterator
-    if args.prefetch_workers > 0:
+    executor = None
+    if args.assembly_workers > 0:
+        # True multiprocessing — each worker builds its own assembler.
+        import concurrent.futures
+        from daity.scripts._assembly_worker import init_worker, assemble_for
+
+        worker_jobs = []
+        for di, ai, d, t_anchor in jobs:
+            train_day = _shift_trading_days(d, args.label_lag_trading_days, calendar)
+            do_pred = predict_from is None or d >= predict_from
+            train_anchor_utc = (_ist_to_utc(train_day, t_anchor)
+                                 if train_day is not None
+                                 and train_day >= date.fromisoformat(args.online_start)
+                                 else None)
+            worker_jobs.append((di, ai, d, t_anchor, do_pred, train_anchor_utc))
+
+        as_of_iso = as_of.isoformat()
+        executor = concurrent.futures.ProcessPoolExecutor(
+            max_workers=args.assembly_workers,
+            initializer=init_worker,
+            initargs=(str(args.feature_root), str(args.cache_root),
+                      args.universe_end, tuple(DEFAULT_COHORT_CHANNELS),
+                      as_of_iso),
+        )
+        sample_iter = executor.map(assemble_for, worker_jobs, chunksize=8)
+        print(f"assembly_workers enabled: {args.assembly_workers} processes", flush=True)
+    elif args.prefetch_workers > 0:
         import concurrent.futures
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=args.prefetch_workers)
-        # Warmup the assembler series cache with the first sample so worker threads
-        # don't race on cache writes.
         if jobs:
             assembler.assemble(_ist_to_utc(jobs[0][2], jobs[0][3]))
         sample_iter = executor.map(_assemble_for, jobs, chunksize=4)
-        print(f"prefetch enabled with {args.prefetch_workers} workers", flush=True)
+        print(f"prefetch (threads) enabled with {args.prefetch_workers} workers", flush=True)
     else:
         sample_iter = (_assemble_for(j) for j in jobs)
-        executor = None
 
     train_buf: list[tuple] = []
     prev_di = -1
+    _anchor_count = 0
+    _t_anchor_loop_start = time.time()
+
+    def _set_lr_for_day(day_idx: int) -> None:
+        """Apply linear LR warmup over first --lr-warmup-days days."""
+        if args.lr_warmup_days <= 0:
+            return
+        if day_idx >= args.lr_warmup_days:
+            target = args.lr
+        else:
+            frac = args.lr_warmup_start_frac + (
+                (1.0 - args.lr_warmup_start_frac) * (day_idx / max(args.lr_warmup_days, 1))
+            )
+            target = args.lr * frac
+        for pg in optimizer.param_groups:
+            pg["lr"] = target
+
     for (di, ai, d, t_anchor, anchor_utc, train_anchor_utc, do_predict,
          sample, train_sample) in sample_iter:
+        _set_lr_for_day(di)
+        _anchor_count += 1
+        if _anchor_count % 25 == 0:
+            _elapsed = time.time() - _t_anchor_loop_start
+            print(f"  [progress] anchor #{_anchor_count} d={d} t={t_anchor} "
+                  f"elapsed={_elapsed:.1f}s rate={_anchor_count/_elapsed:.2f}/s "
+                  f"trained={n_trained} pred={n_predicted}", flush=True)
         # At day boundary: flush any pending train buffer (handles last anchors of previous day)
         if di != prev_di and train_buf:
             t_batch = _stack_batch(train_buf, device)
-            labels_clean, validity = _stack_labels_validity([s for s, _ in train_buf], device)
+            labels_clean, validity, label_v_t = _stack_labels_validity(
+                [s for s, _ in train_buf], device,
+            )
             model.train()
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device, dtype=torch.bfloat16):
                 raw_t = model(t_batch)
-                pred_t, clf_t = _unpack_pred_and_clf(raw_t)
-                out = loss_fn(pred_t, labels_clean, validity, clf_logits=clf_t)
+                pred_t, clf_t, cbias_t = _unpack_all(raw_t)
+                out = loss_fn(pred_t, labels_clean, validity,
+                              clf_logits=clf_t, cohort_bias=cbias_t,
+                              label_validity_per_stock=label_v_t)
             out["total"].backward()
             if args.grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
             optimizer.step()
             last_loss = float(out["total"])
+            last_loss_reg = float(out["reg"]) if "reg" in out else float("nan")
+            last_loss_reg_alpha = float(out["reg_alpha"]) if "reg_alpha" in out else float("nan")
+            last_loss_reg_bias = float(out["reg_bias"]) if "reg_bias" in out else float("nan")
+            last_loss_clf = float(out["clf"]) if "clf" in out else float("nan")
+            last_loss_rank = float(out["rank"]) if "rank" in out else float("nan")
+            last_loss_bias = float(out["bias"]) if "bias" in out else float("nan")
+            if "reg_per_h" in out:
+                ph = out["reg_per_h"].float().cpu().numpy()
+                for hi in ACTIVE_HORIZON_INDICES:
+                    v = float(ph[hi])
+                    h_name = HORIZONS[hi].name
+                    last_loss_reg_per_h[h_name] = v
+                    # Only accumulate if this horizon contributed in this step
+                    # (loss is 0 when validity_mask sum=0 for the horizon)
+                    if v > 0.0:
+                        day_reg_per_h_sum[h_name] = day_reg_per_h_sum.get(h_name, 0.0) + v
+                        day_reg_per_h_cnt[h_name] = day_reg_per_h_cnt.get(h_name, 0) + 1
+            if "clf_per_h" in out:
+                ph = out["clf_per_h"].float().cpu().numpy()
+                for hi in ACTIVE_HORIZON_INDICES:
+                    v = float(ph[hi])
+                    h_name = HORIZONS[hi].name
+                    last_loss_clf_per_h[h_name] = v
+                    if v > 0.0:
+                        day_clf_per_h_sum[h_name] = day_clf_per_h_sum.get(h_name, 0.0) + v
+                        day_clf_per_h_cnt[h_name] = day_clf_per_h_cnt.get(h_name, 0) + 1
             n_trained += len(train_buf)
             train_buf.clear()
         prev_di = di
@@ -571,8 +722,10 @@ def main() -> int:
         if sample is not None and do_predict:
             with torch.no_grad(), torch.autocast(device_type=device, dtype=torch.bfloat16):
                 raw_p = model(_sample_to_batch(sample, anchor_utc, device))
-                pred, clf_logits_p = _unpack_pred_and_clf(raw_p)
+                pred, clf_logits_p, cbias_p = _unpack_all(raw_p)
             pred_np = pred[0].float().cpu().numpy()
+            cbias_np = (cbias_p[0].float().cpu().numpy()
+                         if cbias_p is not None else None)
             clf_prob_np = (torch.sigmoid(clf_logits_p[0]).float().cpu().numpy()
                            if clf_logits_p is not None else None)
             labels_np = sample.labels.cpu().numpy()
@@ -581,14 +734,18 @@ def main() -> int:
                 for h_idx in ACTIVE_HORIZON_INDICES:
                     if not label_v_np[i, h_idx]:
                         continue
+                    bias_h = float(cbias_np[h_idx]) if cbias_np is not None else 0.0
                     row = {
                         "date": d,
                         "anchor_us": int(anchor_utc.timestamp() * 1_000_000),
                         "stock": sym,
                         "horizon": HORIZONS[h_idx].name,
-                        "pred_lr": float(pred_np[i, h_idx]),
+                        "pred_lr": float(pred_np[i, h_idx]),     # alpha (cross-section centered)
                         "real_lr": float(labels_np[i, h_idx]),
                     }
+                    if cbias_np is not None:
+                        row["pred_cohort_bias"] = bias_h
+                        row["pred_lr_total"] = float(pred_np[i, h_idx]) + bias_h
                     if clf_prob_np is not None:
                         row["pred_win_prob"] = float(clf_prob_np[i, h_idx])
                     pred_rows.append(row)
@@ -602,40 +759,103 @@ def main() -> int:
         # Flush buffer when full or at the last anchor of the day
         if (len(train_buf) >= bs or (ai == len(anchor_times) - 1 and train_buf)):
             t_batch = _stack_batch(train_buf, device)
-            labels_clean, validity = _stack_labels_validity([s for s, _ in train_buf], device)
+            labels_clean, validity, label_v_t = _stack_labels_validity(
+                [s for s, _ in train_buf], device,
+            )
             model.train()
             for _step in range(args.steps_per_day):
                 optimizer.zero_grad(set_to_none=True)
                 with torch.autocast(device_type=device, dtype=torch.bfloat16):
                     raw_t = model(t_batch)
-                    pred_t, clf_t = _unpack_pred_and_clf(raw_t)
-                    out = loss_fn(pred_t, labels_clean, validity, clf_logits=clf_t)
+                    pred_t, clf_t, cbias_t = _unpack_all(raw_t)
+                    out = loss_fn(pred_t, labels_clean, validity,
+                                  clf_logits=clf_t, cohort_bias=cbias_t,
+                                  label_validity_per_stock=label_v_t)
                 out["total"].backward()
                 if args.grad_clip > 0:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
                 optimizer.step()
             last_loss = float(out["total"])
+            last_loss_reg = float(out["reg"]) if "reg" in out else float("nan")
+            last_loss_reg_alpha = float(out["reg_alpha"]) if "reg_alpha" in out else float("nan")
+            last_loss_reg_bias = float(out["reg_bias"]) if "reg_bias" in out else float("nan")
+            last_loss_clf = float(out["clf"]) if "clf" in out else float("nan")
+            last_loss_rank = float(out["rank"]) if "rank" in out else float("nan")
+            last_loss_bias = float(out["bias"]) if "bias" in out else float("nan")
+            if "reg_per_h" in out:
+                ph = out["reg_per_h"].float().cpu().numpy()
+                for hi in ACTIVE_HORIZON_INDICES:
+                    v = float(ph[hi])
+                    h_name = HORIZONS[hi].name
+                    last_loss_reg_per_h[h_name] = v
+                    # Only accumulate if this horizon contributed in this step
+                    # (loss is 0 when validity_mask sum=0 for the horizon)
+                    if v > 0.0:
+                        day_reg_per_h_sum[h_name] = day_reg_per_h_sum.get(h_name, 0.0) + v
+                        day_reg_per_h_cnt[h_name] = day_reg_per_h_cnt.get(h_name, 0) + 1
+            if "clf_per_h" in out:
+                ph = out["clf_per_h"].float().cpu().numpy()
+                for hi in ACTIVE_HORIZON_INDICES:
+                    v = float(ph[hi])
+                    h_name = HORIZONS[hi].name
+                    last_loss_clf_per_h[h_name] = v
+                    if v > 0.0:
+                        day_clf_per_h_sum[h_name] = day_clf_per_h_sum.get(h_name, 0.0) + v
+                        day_clf_per_h_cnt[h_name] = day_clf_per_h_cnt.get(h_name, 0) + 1
             n_trained += len(train_buf)
             train_buf.clear()
 
         # End-of-day actions: only when we just consumed the last anchor of the day
         is_last_anchor_of_day = (ai == len(anchor_times) - 1)
         if is_last_anchor_of_day:
-            if di % 25 == 0:
-                log_event({
-                    "event": "online_day",
-                    "day": str(d),
-                    "n_anchors": len(anchor_times),
-                    "train_loss": last_loss,
-                    "n_predicted": n_predicted,
-                    "n_trained": n_trained,
-                })
+            # Log every day for live progress tracking
+            evt = {
+                "event": "online_day",
+                "day": str(d),
+                "n_anchors": len(anchor_times),
+                "train_loss": last_loss,
+                "train_loss_reg":  last_loss_reg,
+                "train_loss_reg_alpha": last_loss_reg_alpha,
+                "train_loss_reg_bias":  last_loss_reg_bias,
+                "train_loss_clf":  last_loss_clf,
+                "train_loss_rank": last_loss_rank,
+                "train_loss_bias": last_loss_bias,
+                "n_predicted": n_predicted,
+                "n_trained": n_trained,
+            }
+            # Use day-running mean per horizon (averaged across all valid steps today).
+            for h_name, total in day_reg_per_h_sum.items():
+                cnt = day_reg_per_h_cnt.get(h_name, 0)
+                if cnt > 0:
+                    evt[f"train_loss_reg_{h_name}"] = total / cnt
+            for h_name, total in day_clf_per_h_sum.items():
+                cnt = day_clf_per_h_cnt.get(h_name, 0)
+                if cnt > 0:
+                    evt[f"train_loss_clf_{h_name}"] = total / cnt
+            log_event(evt)
+            # Reset day accumulators for next day
+            day_reg_per_h_sum.clear()
+            day_reg_per_h_cnt.clear()
+            day_clf_per_h_sum.clear()
+            day_clf_per_h_cnt.clear()
             if (di + 1) % args.ckpt_every == 0:
                 torch.save({
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                     "day": str(d), "day_idx": di + 1,
                 }, ckpt_dir / f"day_{d.isoformat()}.pt")
+                # Flush pred_rows to a chunk parquet. Avoids unbounded growth
+                # of the in-memory dict list for long predict phases (e.g.
+                # 2023-2026 = 750+ trading days × 75 anchors × 200 stocks ×
+                # 7 horizons = ~80M rows). Python dict append + list growth
+                # gets slow past a few million rows.
+                if pred_rows:
+                    chunk_path = (
+                        ckpt_dir.parent
+                        / f"pred_chunk_{di + 1:05d}_{d.isoformat()}.parquet"
+                    )
+                    pl.DataFrame(pred_rows).write_parquet(chunk_path)
+                    pred_rows.clear()
 
     if executor is not None:
         executor.shutdown(wait=True)
@@ -648,14 +868,28 @@ def main() -> int:
         "day_idx": len(online_days),
     }, ckpt_dir / "last.pt")
 
+    # Write remaining pred_rows to a final chunk, then concat all chunks
+    # (including those flushed at each ckpt) into a single predictions.parquet.
     if pred_rows:
-        pl.DataFrame(pred_rows).write_parquet(preds_path)
+        final_chunk = ckpt_dir.parent / "pred_chunk_99999_final.parquet"
+        pl.DataFrame(pred_rows).write_parquet(final_chunk)
+        pred_rows.clear()
+    chunks = sorted(ckpt_dir.parent.glob("pred_chunk_*.parquet"))
+    if chunks:
+        print(f"concat {len(chunks)} prediction chunks -> {preds_path}", flush=True)
+        all_dfs = [pl.read_parquet(c) for c in chunks]
+        pl.concat(all_dfs).write_parquet(preds_path)
+        total_rows = sum(d.shape[0] for d in all_dfs)
+        for c in chunks:
+            c.unlink()  # remove chunks after concat
+    else:
+        total_rows = 0
 
     log_event({"event": "fit_end", "elapsed_sec": time.time() - t0,
                "n_predicted_days": n_predicted, "n_trained_days": n_trained,
-               "n_pred_rows": len(pred_rows)})
+               "n_pred_rows": total_rows})
     print(f"DONE | predicted_days={n_predicted} trained_days={n_trained} "
-          f"pred_rows={len(pred_rows)} elapsed={time.time()-t0:.1f}s", flush=True)
+          f"pred_rows={total_rows} elapsed={time.time()-t0:.1f}s", flush=True)
 
     if wandb_run is not None:
         try: wandb_run.finish()
