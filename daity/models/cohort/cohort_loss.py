@@ -103,11 +103,14 @@ class CohortLoss(nn.Module):
         w_sector: float = 0.0,
         w_contrastive: float = 0.0,
         w_clf: float = 0.0,
+        w_sharpe: float = 0.0,
         clf_threshold_bps: float = 50.0,
         contrastive_ret_sim_thresh: float = 0.5,
         contrastive_tau: float = 0.1,
         smooth_l1_beta: float = 1.0,
         rank_top_k: int = 0,
+        sharpe_tau: float = 0.005,
+        sharpe_cost_bps: float = 30.0,
     ) -> None:
         super().__init__()
         self.w_reg = float(w_reg)
@@ -116,11 +119,17 @@ class CohortLoss(nn.Module):
         self.w_sector = float(w_sector)
         self.w_contrastive = float(w_contrastive)
         self.w_clf = float(w_clf)
+        self.w_sharpe = float(w_sharpe)
         self.clf_threshold_bps = float(clf_threshold_bps)
         self.contrastive_ret_sim_thresh = float(contrastive_ret_sim_thresh)
         self.contrastive_tau = float(contrastive_tau)
         self.smooth_l1_beta = float(smooth_l1_beta)
         self.rank_top_k = int(rank_top_k)
+        # Sharpe-loss hyperparams. tau (softmax temperature) controls
+        # portfolio concentration: smaller → closer to top-1; larger → equal-weight.
+        # In log-return units. Default 0.005 = 50 bps (matches typical alpha scale).
+        self.sharpe_tau = float(sharpe_tau)
+        self.sharpe_cost_bps = float(sharpe_cost_bps)
 
     def forward(
         self,
@@ -134,6 +143,7 @@ class CohortLoss(nn.Module):
         contrastive_sector_ids: torch.Tensor | None = None,
         label_validity_per_stock: torch.Tensor | None = None,
         clf_logits: torch.Tensor | None = None,
+        cohort_bias: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Compute loss components and totals.
 
@@ -157,19 +167,60 @@ class CohortLoss(nn.Module):
             )
             raise ValueError(msg)
 
-        # Cross-sectional demean per (B, H).
-        pred_c   = _cohort_demean(pred)
-        target_c = _cohort_demean(target)
+        # Cross-sectional demean per (B, H) — used for the ranking loss
+        # which only cares about relative order. Use the *masked* mean
+        # (over valid stocks only) so invalid (zero-imputed) labels don't
+        # bias the cohort mean toward zero. Float32 cast prevents bf16
+        # cancellation error in mean over N=200.
+        if label_validity_per_stock is not None:
+            mask3 = label_validity_per_stock.to(torch.float32)            # (B, N, H)
+            denom_n = mask3.sum(dim=1).clamp_min(1.0)                     # (B, H)
+            t_f32 = target.float() * mask3
+            target_cohort_mean = (t_f32.sum(dim=1) / denom_n).to(target.dtype)
+            # Demean using the *masked* mean; zero out invalid cells in residuals.
+            target_c = (target - target_cohort_mean.unsqueeze(1)) * mask3.to(target.dtype)
+            pred_c   = (pred   - pred.float().mean(dim=1, keepdim=True).to(pred.dtype)) * mask3.to(pred.dtype)
+        else:
+            pred_c   = _cohort_demean(pred)
+            target_c = _cohort_demean(target)
+            target_cohort_mean = target.float().mean(dim=1).to(target.dtype)
 
-        # Per-(B, H) reg loss (mean over N), masked by validity.
-        # SmoothL1: sums over N implicitly via mean.
+        # Regression loss DECOMPOSED into:
+        #   loss_alpha = SmoothL1(pred_alpha, target_alpha) — cross-sectional
+        #   loss_bias  = SmoothL1(cohort_bias, target_cohort_mean) — bias head
+        # When `cohort_bias` is None: pure alpha loss (legacy behavior).
+        # When provided: alpha + bias added so each head MUST learn its slice
+        # (model can't absorb all signal into bias).
         sl1 = F.smooth_l1_loss(
             pred_c, target_c, beta=self.smooth_l1_beta, reduction="none",
         )                                                                # (B, N, H)
+        if cohort_bias is not None:
+            sl1_bias = F.smooth_l1_loss(
+                cohort_bias, target_cohort_mean,
+                beta=self.smooth_l1_beta, reduction="none",
+            )                                                             # (B, H)
+        else:
+            sl1_bias = None
         sl1_per_bh = sl1.mean(dim=1)                                     # (B, H)
         sl1_masked = sl1_per_bh * validity_mask.to(sl1_per_bh.dtype)
         n_valid = validity_mask.to(sl1_per_bh.dtype).sum().clamp_min(1.0)
-        loss_reg = sl1_masked.sum() / n_valid
+        loss_reg_alpha = sl1_masked.sum() / n_valid
+        # Per-horizon alpha regression loss (H,)
+        n_valid_per_h = validity_mask.to(sl1_per_bh.dtype).sum(dim=0).clamp_min(1.0)  # (H,)
+        loss_reg_alpha_per_h = sl1_masked.sum(dim=0) / n_valid_per_h     # (H,)
+
+        # Cohort-bias loss (when bias head is enabled)
+        if sl1_bias is not None:
+            sl1_bias_masked = sl1_bias * validity_mask.to(sl1_bias.dtype)   # (B, H)
+            loss_reg_bias = sl1_bias_masked.sum() / n_valid
+            loss_reg_bias_per_h = sl1_bias_masked.sum(dim=0) / n_valid_per_h
+        else:
+            loss_reg_bias = torch.zeros((), device=pred.device, dtype=pred.dtype)
+            loss_reg_bias_per_h = torch.zeros(pred.shape[-1], device=pred.device, dtype=pred.dtype)
+
+        # Total regression loss = alpha + bias (forces each head to learn its slice)
+        loss_reg = loss_reg_alpha + loss_reg_bias
+        loss_reg_per_h = loss_reg_alpha_per_h + loss_reg_bias_per_h
 
         # Plackett-Luce rank loss on cross-sectional residuals.
         if self.w_rank > 0.0:
@@ -234,8 +285,61 @@ class CohortLoss(nn.Module):
                 cell_mask = cell_mask.expand_as(bce_per_cell)
             n_cells = cell_mask.sum().clamp_min(1.0)
             loss_clf = (bce_per_cell * cell_mask).sum() / n_cells
+            # Per-horizon clf loss (H,)
+            masked_bce_h = (bce_per_cell * cell_mask).sum(dim=(0, 1))     # (H,)
+            n_cells_per_h = cell_mask.sum(dim=(0, 1)).clamp_min(1.0)       # (H,)
+            loss_clf_per_h = masked_bce_h / n_cells_per_h                  # (H,)
         else:
             loss_clf = torch.zeros((), device=pred.device, dtype=pred.dtype)
+            loss_clf_per_h = torch.zeros(pred.shape[-1], device=pred.device, dtype=pred.dtype)
+
+        # ----- Differentiable Sharpe loss (per-horizon, batch-Sharpe) -----
+        # For each horizon h:
+        #   w[b,n,h] = softmax(pred_with_bias[b,:,h] / sharpe_tau, dim=stocks)
+        #             — long-only weights, sum=1 per (b,h); concentration via tau
+        #   port_lr[b,h] = sum_n w[b,n,h] * target[b,n,h]   (linear in w)
+        #   net_lr[b,h] = port_lr[b,h] − 2 * cost_bps/10000
+        #   Sharpe_h = mean_b(net_lr) / std_b(net_lr)   (over valid b's)
+        # Loss = mean_h (-Sharpe_h) over horizons where ≥2 valid anchors.
+        #
+        # Invalid stocks: set their pred to -inf in the softmax so they get 0 weight.
+        # If cohort_bias is provided, use pred+cohort_bias for absolute-return ranking
+        # (in practice ranks identical since bias is constant per (b,h)).
+        if self.w_sharpe > 0.0:
+            B, N, H = pred.shape
+            pred_for_sharpe = pred.float()
+            if cohort_bias is not None:
+                pred_for_sharpe = pred_for_sharpe + cohort_bias.float().unsqueeze(1)
+            # Per-stock validity masking: -inf for invalid stocks
+            if label_validity_per_stock is not None:
+                mask_stock = label_validity_per_stock.to(pred_for_sharpe.dtype)  # (B,N,H)
+                pred_for_sharpe = pred_for_sharpe + (mask_stock - 1.0) * 1e9
+            # Softmax over stocks within each (b, h)
+            w = torch.softmax(pred_for_sharpe / max(self.sharpe_tau, 1e-6), dim=1)  # (B,N,H)
+            # Portfolio log-return per (b, h) = w · target
+            port_lr = (w * target.float()).sum(dim=1)                              # (B, H)
+            cost_lr = 2.0 * self.sharpe_cost_bps / 10000.0
+            net_lr = port_lr - cost_lr                                              # (B, H)
+            # Compute Sharpe per horizon over VALID anchors
+            valid = validity_mask.float()                                           # (B, H)
+            sharpe_h_list = []
+            for h in range(H):
+                vb = valid[:, h].bool()
+                n_valid = vb.sum().item()
+                if n_valid < 2:
+                    continue
+                vh = net_lr[vb, h]
+                mu = vh.mean()
+                # Use unbiased=False for differentiability with small N; +eps for stability
+                sigma = vh.std(unbiased=False) + 1e-6
+                sharpe_h = mu / sigma
+                sharpe_h_list.append(-sharpe_h)   # minimize negative = maximize Sharpe
+            if sharpe_h_list:
+                loss_sharpe = torch.stack(sharpe_h_list).mean()
+            else:
+                loss_sharpe = torch.zeros((), device=pred.device, dtype=pred.dtype)
+        else:
+            loss_sharpe = torch.zeros((), device=pred.device, dtype=pred.dtype)
 
         total = (
             self.w_reg          * loss_reg +
@@ -243,16 +347,24 @@ class CohortLoss(nn.Module):
             self.w_bias         * loss_bias +
             self.w_sector       * loss_sector +
             self.w_contrastive  * loss_contrastive +
-            self.w_clf          * loss_clf
+            self.w_clf          * loss_clf +
+            self.w_sharpe       * loss_sharpe
         )
         return {
             "total":       total,
             "reg":         loss_reg.detach(),
+            "reg_alpha":   loss_reg_alpha.detach(),       # cross-sectional
+            "reg_bias":    loss_reg_bias.detach(),         # cohort-mean head
             "rank":        loss_rank.detach(),
             "bias":        loss_bias.detach(),
             "sector":      loss_sector.detach(),
             "contrastive": loss_contrastive.detach(),
             "clf":         loss_clf.detach(),
+            "sharpe":      loss_sharpe.detach(),          # negative Sharpe (lower is better)
+            "reg_per_h":   loss_reg_per_h.detach(),     # (H,) alpha+bias combined
+            "reg_alpha_per_h": loss_reg_alpha_per_h.detach(),  # (H,)
+            "reg_bias_per_h":  loss_reg_bias_per_h.detach(),   # (H,)
+            "clf_per_h":   loss_clf_per_h.detach(),     # (H,)
             "n_valid_horizons": n_valid.detach(),
         }
 
